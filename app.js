@@ -16,10 +16,22 @@ const DEFAULT_LAYERS = [
   "12~Document~#FFFFFF~true~false~true"
 ];
 
+const SYMBOL_SIDES = ["top", "bottom", "left", "right"];
+const CACHE_COOKIE_META = "dupont_grid_project_cache_meta";
+const CACHE_COOKIE_CHUNK_PREFIX = "dupont_grid_project_cache_";
+const CACHE_LOCAL_STORAGE_KEY = "dupont_grid_project_cache_v2";
+const CACHE_COOKIE_DAYS = 180;
+const CACHE_CHUNK_SIZE = 3500;
+const DEFAULT_LAYOUT_COLUMNS = { left: 300, center: 0, right: 300 };
+const MIN_LAYOUT_COLUMNS = { left: 240, center: 420, right: 260 };
+
 let state = createState(3, 8);
+let cacheSaveTimer = null;
 
 const dom = {
+  appLayout: document.querySelector("#appLayout"),
   partName: document.querySelector("#partName"),
+  nameSilkFontSize: document.querySelector("#nameSilkFontSizeInput"),
   rows: document.querySelector("#rowsInput"),
   cols: document.querySelector("#colsInput"),
   pitch: document.querySelector("#pitchInput"),
@@ -28,7 +40,26 @@ const dom = {
   silkWidth: document.querySelector("#silkWidthInput"),
   outline: document.querySelector("#outlineInput"),
   pinNameSilk: document.querySelector("#pinNameSilkInput"),
-  buildGrid: document.querySelector("#buildGridButton"),
+  outlineMargin: document.querySelector("#outlineMarginInput"),
+  outlineCustomMargins: document.querySelector("#outlineCustomMarginsInput"),
+  outlineMarginsPanel: document.querySelector("#outlineMarginsPanel"),
+  outlineMargins: {
+    top: document.querySelector("#outlineTopMarginInput"),
+    bottom: document.querySelector("#outlineBottomMarginInput"),
+    left: document.querySelector("#outlineLeftMarginInput"),
+    right: document.querySelector("#outlineRightMarginInput")
+  },
+  symbolRows: document.querySelector("#symbolRowsInput"),
+  symbolPinsPerRow: document.querySelector("#symbolPinsPerRowInput"),
+  symbolMirror: document.querySelector("#symbolMirrorInput"),
+  symbolFlip: document.querySelector("#symbolFlipInput"),
+  symbolFourOptions: document.querySelector("#symbolFourOptions"),
+  symbolSidePins: {
+    top: document.querySelector("#symbolTopPinsInput"),
+    bottom: document.querySelector("#symbolBottomPinsInput"),
+    left: document.querySelector("#symbolLeftPinsInput"),
+    right: document.querySelector("#symbolRightPinsInput")
+  },
   enableAll: document.querySelector("#enableAllButton"),
   disableAll: document.querySelector("#disableAllButton"),
   autoNumber: document.querySelector("#autoNumberButton"),
@@ -40,6 +71,7 @@ const dom = {
   silkSvg: document.querySelector("#silkSvg"),
   silkText: document.querySelector("#silkTextInput"),
   undoSilk: document.querySelector("#undoSilkButton"),
+  columnResizers: Array.from(document.querySelectorAll(".column-resizer")),
   modeButtons: Array.from(document.querySelectorAll(".mode-button")),
   emptySelection: document.querySelector("#emptySelection"),
   cellInspector: document.querySelector("#cellInspector"),
@@ -50,10 +82,10 @@ const dom = {
   totalCells: document.querySelector("#totalCellsStat"),
   activeCells: document.querySelector("#activeCellsStat"),
   silkStat: document.querySelector("#silkStat"),
-  validationBox: document.querySelector("#validationBox"),
+  symbolPreview: document.querySelector("#symbolPreview"),
+  pcbPreview: document.querySelector("#pcbPreview"),
   projectStatus: document.querySelector("#projectStatus"),
-  downloadLcedaFootprint: document.querySelector("#downloadLcedaFootprint"),
-  downloadLcedaSymbol: document.querySelector("#downloadLcedaSymbol"),
+  downloadKicadZip: document.querySelector("#downloadKicadZip"),
   downloadKicadMod: document.querySelector("#downloadKicadMod"),
   downloadKicadSym: document.querySelector("#downloadKicadSym")
 };
@@ -66,12 +98,22 @@ function createState(rows, cols) {
     padMm: 1.8,
     drillMm: 1.0,
     silkWidthMm: 0.15,
+    nameSilkFontSizeMm: 1,
     partName: "DUPONT_GRID",
     includeOutline: true,
     includePinNameSilk: false,
+    outlineMarginMm: 1.27,
+    outlineCustomMargins: false,
+    outlineMargins: createOutlineMargins(),
+    symbolRows: 2,
+    symbolPinsPerRow: 0,
+    symbolMirror: false,
+    symbolFlip: false,
+    symbolSidePins: createSymbolSidePins(),
     mode: "select",
     drawStart: null,
     selectedKey: null,
+    layoutColumns: createLayoutColumns(),
     cells: Array.from({ length: rows * cols }, (_, index) => {
       const row = Math.floor(index / cols);
       const col = index % cols;
@@ -84,6 +126,35 @@ function createState(rows, cols) {
       };
     }),
     silkscreen: []
+  };
+}
+
+function createSymbolSidePins(source = {}) {
+  const values = source || {};
+  return {
+    top: clampIntOrZero(values.top ?? "", 1, 200),
+    bottom: clampIntOrZero(values.bottom ?? "", 1, 200),
+    left: clampIntOrZero(values.left ?? "", 1, 200),
+    right: clampIntOrZero(values.right ?? "", 1, 200)
+  };
+}
+
+function createOutlineMargins(source = {}, fallback = 1.27) {
+  const values = source || {};
+  return {
+    top: nonNegativeNumber(values.top, fallback),
+    bottom: nonNegativeNumber(values.bottom, fallback),
+    left: nonNegativeNumber(values.left, fallback),
+    right: nonNegativeNumber(values.right, fallback)
+  };
+}
+
+function createLayoutColumns(source = {}) {
+  const values = source || {};
+  return {
+    left: clampNumber(values.left ?? DEFAULT_LAYOUT_COLUMNS.left, MIN_LAYOUT_COLUMNS.left, 900),
+    center: clampNumber(values.center ?? DEFAULT_LAYOUT_COLUMNS.center, 0, 2000),
+    right: clampNumber(values.right ?? DEFAULT_LAYOUT_COLUMNS.right, MIN_LAYOUT_COLUMNS.right, 900)
   };
 }
 
@@ -103,6 +174,7 @@ function selectedCell() {
 
 function syncInputsFromState() {
   dom.partName.value = state.partName;
+  dom.nameSilkFontSize.value = state.nameSilkFontSizeMm;
   dom.rows.value = state.rows;
   dom.cols.value = state.cols;
   dom.pitch.value = state.pitchMm;
@@ -111,21 +183,75 @@ function syncInputsFromState() {
   dom.silkWidth.value = state.silkWidthMm;
   dom.outline.checked = state.includeOutline;
   dom.pinNameSilk.checked = state.includePinNameSilk;
+  dom.outlineMargin.value = state.outlineMarginMm;
+  dom.outlineCustomMargins.checked = Boolean(state.outlineCustomMargins);
+  syncOutlineMarginInputs();
+  dom.symbolRows.value = String(state.symbolRows || 2);
+  dom.symbolPinsPerRow.value = state.symbolPinsPerRow ? String(state.symbolPinsPerRow) : "";
+  dom.symbolMirror.checked = Boolean(state.symbolMirror);
+  dom.symbolFlip.checked = Boolean(state.symbolFlip);
+  for (const side of SYMBOL_SIDES) {
+    dom.symbolSidePins[side].value = state.symbolSidePins?.[side] ? String(state.symbolSidePins[side]) : "";
+  }
+}
+
+function syncOutlineMarginInputs() {
+  for (const side of SYMBOL_SIDES) {
+    dom.outlineMargins[side].value = state.outlineMargins?.[side] ?? "";
+  }
 }
 
 function readSettings() {
+  const wasOutlineCustomMargins = state.outlineCustomMargins;
   state.partName = normalizeName(dom.partName.value || "DUPONT_GRID");
+  state.nameSilkFontSizeMm = positiveNumber(dom.nameSilkFontSize.value, 1);
   state.pitchMm = positiveNumber(dom.pitch.value, 2.54);
   state.padMm = positiveNumber(dom.pad.value, 1.8);
   state.drillMm = positiveNumber(dom.drill.value, 1.0);
   state.silkWidthMm = positiveNumber(dom.silkWidth.value, 0.15);
   state.includeOutline = dom.outline.checked;
   state.includePinNameSilk = dom.pinNameSilk.checked;
+  state.outlineMarginMm = nonNegativeNumber(dom.outlineMargin.value, 1.27);
+  state.outlineCustomMargins = dom.outlineCustomMargins.checked;
+  if (state.outlineCustomMargins && !wasOutlineCustomMargins) {
+    state.outlineMargins = createOutlineMargins({}, state.outlineMarginMm);
+    syncOutlineMarginInputs();
+  } else if (state.outlineCustomMargins) {
+    state.outlineMargins = createOutlineMargins({
+      top: dom.outlineMargins.top.value,
+      bottom: dom.outlineMargins.bottom.value,
+      left: dom.outlineMargins.left.value,
+      right: dom.outlineMargins.right.value
+    }, state.outlineMarginMm);
+  } else {
+    state.outlineMargins = createOutlineMargins({}, state.outlineMarginMm);
+  }
+  state.symbolRows = normalizeSymbolRows(dom.symbolRows.value);
+  state.symbolPinsPerRow = clampIntOrZero(dom.symbolPinsPerRow.value, 1, 200);
+  state.symbolMirror = dom.symbolMirror.checked;
+  state.symbolFlip = dom.symbolFlip.checked;
+  state.symbolSidePins = createSymbolSidePins({
+    top: dom.symbolSidePins.top.value,
+    bottom: dom.symbolSidePins.bottom.value,
+    left: dom.symbolSidePins.left.value,
+    right: dom.symbolSidePins.right.value
+  });
 }
 
 function positiveNumber(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function clampNumber(value, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function normalizeName(value) {
@@ -136,14 +262,20 @@ function normalizeName(value) {
     .slice(0, 64) || "DUPONT_GRID";
 }
 
-function rebuildGrid() {
+function resizeGridFromInputs() {
   readSettings();
-  const rows = clampInt(dom.rows.value, 1, 40);
-  const cols = clampInt(dom.cols.value, 1, 40);
+  const minimum = getMinimumGridSizeForActiveCells();
+  const rows = Math.max(clampInt(dom.rows.value, 1, 40), minimum.rows);
+  const cols = Math.max(clampInt(dom.cols.value, 1, 40), minimum.cols);
   const oldCells = new Map(state.cells.map((cell) => [keyFor(cell.row, cell.col), cell]));
+  const currentSelection = selectedCell();
   state.rows = rows;
   state.cols = cols;
-  state.selectedKey = null;
+  dom.rows.value = rows;
+  dom.cols.value = cols;
+  state.selectedKey = currentSelection && currentSelection.row < rows && currentSelection.col < cols
+    ? keyFor(currentSelection.row, currentSelection.col)
+    : null;
   state.cells = Array.from({ length: rows * cols }, (_, index) => {
     const row = Math.floor(index / cols);
     const col = index % cols;
@@ -153,19 +285,64 @@ function rebuildGrid() {
   render();
 }
 
+function getMinimumGridSizeForActiveCells() {
+  return getActiveCells().reduce((minimum, cell) => ({
+    rows: Math.max(minimum.rows, cell.row + 1),
+    cols: Math.max(minimum.cols, cell.col + 1)
+  }), { rows: 1, cols: 1 });
+}
+
 function clampInt(value, min, max) {
   const parsed = Math.floor(Number(value));
   if (!Number.isFinite(parsed)) return min;
   return Math.min(max, Math.max(min, parsed));
 }
 
+function clampIntOrZero(value, min, max) {
+  const text = String(value).trim();
+  const parsed = Number(text);
+  if (text === "" || !Number.isFinite(parsed) || parsed <= 0) return 0;
+  return clampInt(parsed, min, max);
+}
+
+function normalizeSymbolRows(value) {
+  const rows = clampInt(value, 1, 4);
+  return rows >= 4 ? 4 : rows >= 2 ? 2 : 1;
+}
+
 function render() {
   readSettings();
+  applyLayoutColumns();
   renderGrid();
   renderSilkscreen();
   renderInspector();
   renderStats();
+  renderOutlineOptions();
+  renderSymbolOptions();
+  renderSymbolPreview();
+  renderPcbPreview();
   renderMode();
+  scheduleProjectCacheSave();
+}
+
+function renderOutlineOptions() {
+  dom.outlineMarginsPanel.classList.toggle("hidden", !state.outlineCustomMargins);
+}
+
+function renderSymbolOptions() {
+  dom.symbolFourOptions.classList.toggle("hidden", state.symbolRows !== 4);
+}
+
+function applyLayoutColumns() {
+  if (!dom.appLayout) return;
+  const columns = createLayoutColumns(state.layoutColumns);
+  dom.appLayout.style.setProperty("--layout-left", `${round(columns.left, 1)}px`);
+  if (columns.center > 0) {
+    dom.appLayout.style.setProperty("--layout-center", `${round(columns.center, 1)}px`);
+  } else {
+    dom.appLayout.style.removeProperty("--layout-center");
+  }
+  dom.appLayout.style.setProperty("--layout-right", `${round(columns.right, 1)}px`);
 }
 
 function renderGrid() {
@@ -257,10 +434,475 @@ function renderStats() {
   dom.totalCells.textContent = String(state.rows * state.cols);
   dom.activeCells.textContent = String(active.length);
   dom.silkStat.textContent = String(state.silkscreen.length + (state.includeOutline ? 1 : 0));
-  const validation = validateModel();
-  dom.validationBox.textContent = validation.message;
-  dom.validationBox.className = `validation-box ${validation.level}`;
   dom.projectStatus.textContent = active.length ? `${active.length} 个焊孔` : "未生成";
+}
+
+function renderSymbolPreview() {
+  const model = buildModel();
+  const svg = dom.symbolPreview;
+  svg.innerHTML = "";
+  if (!model.pads.length) {
+    svg.setAttribute("viewBox", "0 0 300 220");
+    const text = svgEl("text", {
+      x: 150,
+      y: 110,
+      fill: "#65717d",
+      "font-size": 13,
+      "text-anchor": "middle"
+    });
+    text.textContent = "启用格子后显示器件预览";
+    svg.appendChild(text);
+    return;
+  }
+
+  const layout = buildSymbolLayout(model);
+  const pinLength = layout.pinLength;
+  const minX = -layout.bodyHalfW - pinLength - 5;
+  const maxX = layout.bodyHalfW + pinLength + 5;
+  const minY = -layout.bodyHalfH - pinLength - 5;
+  const maxY = layout.bodyHalfH + pinLength + 5;
+  const scale = 16;
+  const margin = 14;
+  const width = Math.max(260, (maxX - minX) * scale + margin * 2);
+  const height = Math.max(220, (maxY - minY) * scale + margin * 2);
+  const toX = (x) => margin + (x - minX) * scale;
+  const toY = (y) => margin + (maxY - y) * scale;
+  const selected = selectedCell();
+
+  svg.setAttribute("viewBox", `0 0 ${round(width, 2)} ${round(height, 2)}`);
+  svg.setAttribute("height", Math.round(height));
+
+  const title = svgEl("text", {
+    class: "symbol-title",
+    x: toX(0),
+    y: toY(layout.bodyHalfH + 1.27)
+  });
+  title.textContent = model.name;
+  svg.appendChild(title);
+
+  const body = svgEl("rect", {
+    class: "symbol-body",
+    x: toX(-layout.bodyHalfW),
+    y: toY(layout.bodyHalfH),
+    width: layout.bodyHalfW * 2 * scale,
+    height: layout.bodyHalfH * 2 * scale
+  });
+  svg.appendChild(body);
+
+  for (const pin of layout.pins) {
+    const group = svgEl("g", {
+      class: `symbol-pin${selected && selected.enabled && selected.pinNumber === pin.pin.number ? " selected" : ""}`
+    });
+    const points = getPreviewPinPoints(layout, pin);
+    const line = svgEl("line", {
+      class: "symbol-pin-line",
+      x1: toX(points.outsideX),
+      y1: toY(points.outsideY),
+      x2: toX(points.bodyX),
+      y2: toY(points.bodyY)
+    });
+    const terminal = svgEl("circle", {
+      class: "symbol-pin-terminal",
+      cx: toX(points.outsideX),
+      cy: toY(points.outsideY),
+      r: 4
+    });
+    const number = svgEl("text", {
+      class: "symbol-pin-number",
+      x: toX(points.numberX),
+      y: toY(points.numberY) - points.numberOffsetY,
+      "text-anchor": "middle"
+    });
+    number.textContent = pin.pin.number;
+    const name = svgEl("text", {
+      class: "symbol-pin-name",
+      x: toX(points.nameX),
+      y: toY(points.nameY),
+      "text-anchor": points.nameAnchor
+    });
+    name.textContent = pin.pin.name;
+    group.append(line, terminal, number, name);
+    svg.appendChild(group);
+  }
+
+  const ref = svgEl("text", {
+    class: "symbol-ref",
+    x: toX(0),
+    y: toY(-layout.bodyHalfH - 1.27)
+  });
+  ref.textContent = "J?";
+  svg.appendChild(ref);
+}
+
+function renderPcbPreview() {
+  const model = buildModel();
+  const svg = dom.pcbPreview;
+  svg.innerHTML = "";
+  if (!model.pads.length) {
+    svg.setAttribute("viewBox", "0 0 300 220");
+    svg.setAttribute("height", 220);
+    const text = svgEl("text", {
+      x: 150,
+      y: 110,
+      fill: "#65717d",
+      "font-size": 13,
+      "text-anchor": "middle"
+    });
+    text.textContent = "启用格子后显示 PCB 预览";
+    svg.appendChild(text);
+    return;
+  }
+
+  const bounds = getPcbPreviewBounds(model);
+  const viewW = Math.max(1, bounds.maxX - bounds.minX);
+  const viewH = Math.max(1, bounds.maxY - bounds.minY);
+  const height = Math.round(Math.max(220, Math.min(420, viewH * 28)));
+  const metrics = getFootprintMetrics(model);
+
+  svg.setAttribute("viewBox", `${round(bounds.minX, 3)} ${round(bounds.minY, 3)} ${round(viewW, 3)} ${round(viewH, 3)}`);
+  svg.setAttribute("height", height);
+
+  if (model.includeOutline) {
+    svg.appendChild(svgEl("rect", {
+      class: "pcb-outline",
+      x: metrics.leftX,
+      y: metrics.topY,
+      width: round(metrics.rightX - metrics.leftX, 3),
+      height: round(metrics.bottomY - metrics.topY, 3)
+    }));
+  }
+
+  const partNameText = getPartNameTextPlacement(model);
+  const partName = svgEl("text", {
+    class: "pcb-part-name",
+    x: partNameText.x,
+    y: partNameText.y,
+    "font-size": partNameText.size,
+    "text-anchor": "middle"
+  });
+  partName.textContent = model.name;
+  svg.appendChild(partName);
+
+  for (const item of model.silkscreen) {
+    appendPcbSilkscreenItem(svg, model, item);
+  }
+
+  if (model.includePinNameSilk) {
+    for (const pad of model.pads) {
+      const point = padToFootprintPoint(model, pad, 0.35, -0.95);
+      const text = svgEl("text", {
+        class: "pcb-pin-name",
+        x: point.x,
+        y: point.y
+      });
+      text.textContent = pad.name;
+      svg.appendChild(text);
+    }
+  }
+
+  for (const pad of model.pads) {
+    const point = padToFootprintPoint(model, pad);
+    const group = svgEl("g", { class: "pcb-pad-group" });
+    const copper = svgEl("circle", {
+      class: "pcb-pad",
+      cx: point.x,
+      cy: point.y,
+      r: round(model.padMm / 2, 3)
+    });
+    const drill = svgEl("circle", {
+      class: "pcb-drill",
+      cx: point.x,
+      cy: point.y,
+      r: round(model.drillMm / 2, 3)
+    });
+    const number = svgEl("text", {
+      class: "pcb-pad-number",
+      x: point.x,
+      y: point.y
+    });
+    number.textContent = pad.number;
+    group.append(copper, drill, number);
+    svg.appendChild(group);
+  }
+}
+
+function appendPcbSilkscreenItem(svg, model, item) {
+  if (item.type === "line") {
+    const p1 = footprintLocalPoint(model, item.x1Mm, item.y1Mm);
+    const p2 = footprintLocalPoint(model, item.x2Mm, item.y2Mm);
+    svg.appendChild(svgEl("line", {
+      class: "pcb-silk",
+      x1: p1.x,
+      y1: p1.y,
+      x2: p2.x,
+      y2: p2.y
+    }));
+  }
+  if (item.type === "rect") {
+    const p1 = footprintLocalPoint(model, Math.min(item.x1Mm, item.x2Mm), Math.min(item.y1Mm, item.y2Mm));
+    const p2 = footprintLocalPoint(model, Math.max(item.x1Mm, item.x2Mm), Math.max(item.y1Mm, item.y2Mm));
+    svg.appendChild(svgEl("rect", {
+      class: "pcb-silk",
+      x: p1.x,
+      y: p1.y,
+      width: Math.max(0.1, p2.x - p1.x),
+      height: Math.max(0.1, p2.y - p1.y)
+    }));
+  }
+  if (item.type === "text") {
+    const point = footprintLocalPoint(model, item.xMm, item.yMm);
+    const text = svgEl("text", {
+      class: "pcb-silk-text",
+      x: point.x,
+      y: point.y
+    });
+    text.textContent = item.value;
+    svg.appendChild(text);
+  }
+}
+
+function getPcbPreviewBounds(model) {
+  const xs = [];
+  const ys = [];
+  const include = (x, y) => {
+    xs.push(x);
+    ys.push(y);
+  };
+  const metrics = getFootprintMetrics(model);
+  const padRadius = model.padMm / 2;
+
+  for (const pad of model.pads) {
+    const point = padToFootprintPoint(model, pad);
+    include(point.x - padRadius, point.y - padRadius);
+    include(point.x + padRadius, point.y + padRadius);
+    if (model.includePinNameSilk) {
+      const namePoint = padToFootprintPoint(model, pad, 0.35, -0.95);
+      include(namePoint.x, namePoint.y);
+    }
+  }
+
+  if (model.includeOutline) {
+    include(metrics.leftX, metrics.topY);
+    include(metrics.rightX, metrics.bottomY);
+  }
+
+  const partNameText = getPartNameTextPlacement(model);
+  const estimatedWidth = Math.max(partNameText.size, model.name.length * partNameText.size * 0.65);
+  include(partNameText.x - estimatedWidth / 2, partNameText.y - partNameText.size);
+  include(partNameText.x + estimatedWidth / 2, partNameText.y + partNameText.size);
+
+  for (const item of model.silkscreen) {
+    if (item.type === "line" || item.type === "rect") {
+      const p1 = footprintLocalPoint(model, item.x1Mm, item.y1Mm);
+      const p2 = footprintLocalPoint(model, item.x2Mm, item.y2Mm);
+      include(p1.x, p1.y);
+      include(p2.x, p2.y);
+    }
+    if (item.type === "text") {
+      const point = footprintLocalPoint(model, item.xMm, item.yMm);
+      include(point.x, point.y);
+    }
+  }
+
+  if (!xs.length) {
+    include(-metrics.halfW - padRadius, -metrics.halfH - padRadius);
+    include(metrics.halfW + padRadius, metrics.halfH + padRadius);
+  }
+
+  const margin = Math.max(1.2, model.padMm / 2 + model.silkWidthMm + 0.5);
+  return {
+    minX: Math.min(...xs) - margin,
+    minY: Math.min(...ys) - margin,
+    maxX: Math.max(...xs) + margin,
+    maxY: Math.max(...ys) + margin
+  };
+}
+
+function getPartNameTextPlacement(model) {
+  const metrics = getFootprintMetrics(model);
+  const size = Math.max(0.4, model.nameSilkFontSizeMm || 1);
+  return {
+    x: 0,
+    y: round(metrics.bottomY + Math.max(1.5, size * 1.5), 3),
+    size,
+    thickness: round(Math.max(0.1, size * 0.15), 3)
+  };
+}
+
+function getPreviewPinPoints(layout, pin) {
+  if (pin.side === "left" || pin.side === "right") {
+    const bodyX = pin.side === "left" ? -layout.bodyHalfW : layout.bodyHalfW;
+    const outsideX = pin.side === "left" ? -layout.bodyHalfW - layout.pinLength : layout.bodyHalfW + layout.pinLength;
+    return {
+      outsideX,
+      outsideY: pin.y,
+      bodyX,
+      bodyY: pin.y,
+      numberX: (outsideX + bodyX) / 2,
+      numberY: pin.y,
+      numberOffsetY: 9,
+      nameX: pin.side === "left" ? -layout.bodyHalfW + 1.2 : layout.bodyHalfW - 1.2,
+      nameY: pin.y,
+      nameAnchor: pin.side === "left" ? "start" : "end"
+    };
+  }
+
+  const bodyY = pin.side === "top" ? layout.bodyHalfH : -layout.bodyHalfH;
+  const outsideY = pin.side === "top" ? layout.bodyHalfH + layout.pinLength : -layout.bodyHalfH - layout.pinLength;
+  return {
+    outsideX: pin.x,
+    outsideY,
+    bodyX: pin.x,
+    bodyY,
+    numberX: pin.x,
+    numberY: (outsideY + bodyY) / 2,
+    numberOffsetY: pin.side === "top" ? 4 : -13,
+    nameX: pin.x,
+    nameY: pin.side === "top" ? bodyY - 1.2 : bodyY + 1.2,
+    nameAnchor: "middle"
+  };
+}
+
+function buildSymbolLayout(model) {
+  const pins = model.pads;
+  const pinLength = 5.08;
+  const rowPitch = 2.54;
+  const configuredRows = normalizeSymbolRows(model.symbolRows || 2);
+  const sidePins = assignPinsToSymbolSides(pins, model, configuredRows);
+  const layoutPins = [];
+
+  const horizontalCount = Math.max(sidePins.top.length, sidePins.bottom.length, 1);
+  const verticalCount = Math.max(sidePins.left.length, sidePins.right.length, 1);
+  const bodyHalfW = Math.max(7, ((horizontalCount - 1) * rowPitch) / 2 + 2.54);
+  const bodyHalfH = Math.max(4, ((verticalCount - 1) * rowPitch) / 2 + 2.54);
+
+  const addHorizontalPins = (side) => {
+    const count = sidePins[side].length;
+    const startX = -((count - 1) * rowPitch) / 2;
+    sidePins[side].forEach((pin, index) => {
+      layoutPins.push({
+        pin,
+        side,
+        x: round(startX + index * rowPitch, 3),
+        y: side === "top" ? round(bodyHalfH + pinLength, 3) : round(-bodyHalfH - pinLength, 3),
+        angle: side === "top" ? 270 : 90
+      });
+    });
+  };
+
+  const addVerticalPins = (side) => {
+    const count = sidePins[side].length;
+    const startY = ((count - 1) * rowPitch) / 2;
+    sidePins[side].forEach((pin, index) => {
+      layoutPins.push({
+        pin,
+        side,
+        x: side === "left" ? -bodyHalfW - pinLength : bodyHalfW + pinLength,
+        y: round(startY - index * rowPitch, 3),
+        angle: side === "left" ? 0 : 180
+      });
+    });
+  };
+
+  addHorizontalPins("top");
+  addHorizontalPins("bottom");
+  addVerticalPins("left");
+  addVerticalPins("right");
+
+  return {
+    bodyHalfH,
+    bodyHalfW,
+    pinLength,
+    pins: layoutPins
+  };
+}
+
+function assignPinsToSymbolSides(pins, model, configuredRows) {
+  const baseSidePins = createSymbolSideBuckets();
+  const pinsPerRow = model.symbolPinsPerRow > 0
+    ? Math.max(1, Math.floor(model.symbolPinsPerRow))
+    : Math.max(1, Math.ceil(Math.max(pins.length, 1) / configuredRows));
+
+  if (configuredRows === 4) {
+    assignFourSidePins(baseSidePins, pins, model, pinsPerRow);
+  } else {
+    const sideSequence = configuredRows === 2 ? ["left", "right"] : ["left"];
+    const groupCount = Math.max(configuredRows, Math.ceil(Math.max(pins.length, 1) / pinsPerRow));
+    for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
+      const side = sideSequence[groupIndex % sideSequence.length];
+      const start = groupIndex * pinsPerRow;
+      baseSidePins[side].push(...pins.slice(start, start + pinsPerRow));
+    }
+  }
+
+  return transformSymbolSidePins(baseSidePins, model);
+}
+
+function assignFourSidePins(sidePins, pins, model, pinsPerRow) {
+  const sideCounts = createSymbolSidePins(model.symbolSidePins);
+  const hasSideCounts = SYMBOL_SIDES.some((side) => sideCounts[side] > 0);
+
+  if (!hasSideCounts) {
+    const groupCount = Math.max(4, Math.ceil(Math.max(pins.length, 1) / pinsPerRow));
+    for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
+      const side = SYMBOL_SIDES[groupIndex % SYMBOL_SIDES.length];
+      const start = groupIndex * pinsPerRow;
+      sidePins[side].push(...pins.slice(start, start + pinsPerRow));
+    }
+    return;
+  }
+
+  const fixedTotal = SYMBOL_SIDES.reduce((sum, side) => sum + sideCounts[side], 0);
+  const autoSides = SYMBOL_SIDES.filter((side) => sideCounts[side] === 0);
+  const remainingForAuto = Math.max(0, pins.length - fixedTotal);
+  const autoCount = model.symbolPinsPerRow > 0
+    ? Math.max(1, Math.floor(model.symbolPinsPerRow))
+    : autoSides.length
+      ? Math.ceil(remainingForAuto / autoSides.length)
+      : 0;
+  let cursor = 0;
+
+  for (const side of SYMBOL_SIDES) {
+    const count = sideCounts[side] > 0 ? sideCounts[side] : autoCount;
+    if (count > 0) {
+      sidePins[side].push(...pins.slice(cursor, cursor + count));
+      cursor += count;
+    }
+  }
+
+  if (cursor < pins.length) {
+    sidePins.right.push(...pins.slice(cursor));
+  }
+}
+
+function createSymbolSideBuckets() {
+  return {
+    top: [],
+    bottom: [],
+    left: [],
+    right: []
+  };
+}
+
+function transformSymbolSidePins(sidePins, model) {
+  const transformed = createSymbolSideBuckets();
+  for (const side of SYMBOL_SIDES) {
+    transformed[transformSymbolSide(side, model)].push(...sidePins[side]);
+  }
+  return transformed;
+}
+
+function transformSymbolSide(side, model) {
+  let next = side;
+  if (model.symbolMirror) {
+    if (next === "left") next = "right";
+    else if (next === "right") next = "left";
+  }
+  if (model.symbolFlip) {
+    if (next === "top") next = "bottom";
+    else if (next === "bottom") next = "top";
+  }
+  return next;
 }
 
 function renderMode() {
@@ -336,7 +978,7 @@ function validateModel() {
     seen.add(number);
   }
   if (duplicates.size) return { level: "danger", message: `引脚编号重复：${Array.from(duplicates).join(", ")}` };
-  return { level: "ok", message: "可以导出立创 EDA 标准版器件与封装。" };
+  return { level: "ok", message: "可以导出 KiCad 器件与封装。" };
 }
 
 function buildModel() {
@@ -367,8 +1009,17 @@ function buildModel() {
     padMm: state.padMm,
     drillMm: state.drillMm,
     silkWidthMm: state.silkWidthMm,
+    nameSilkFontSizeMm: state.nameSilkFontSizeMm,
     includeOutline: state.includeOutline,
     includePinNameSilk: state.includePinNameSilk,
+    outlineMarginMm: state.outlineMarginMm,
+    outlineCustomMargins: state.outlineCustomMargins,
+    outlineMargins: createOutlineMargins(state.outlineMargins, state.outlineMarginMm),
+    symbolRows: state.symbolRows,
+    symbolPinsPerRow: state.symbolPinsPerRow,
+    symbolMirror: state.symbolMirror,
+    symbolFlip: state.symbolFlip,
+    symbolSidePins: createSymbolSidePins(state.symbolSidePins),
     pads,
     silkscreen: state.silkscreen.map((item) => ({ ...item }))
   };
@@ -491,6 +1142,53 @@ function round(value, places = 3) {
   return Math.round(value * factor) / factor;
 }
 
+function getFootprintMetrics(model) {
+  const halfW = ((model.cols - 1) * model.pitchMm) / 2;
+  const halfH = ((model.rows - 1) * model.pitchMm) / 2;
+  const margins = getOutlineMargins(model);
+  return {
+    halfW,
+    halfH,
+    outlineLeft: margins.left,
+    outlineRight: margins.right,
+    outlineTop: margins.top,
+    outlineBottom: margins.bottom,
+    leftX: round(-halfW - margins.left, 3),
+    rightX: round(halfW + margins.right, 3),
+    topY: round(-halfH - margins.top, 3),
+    bottomY: round(halfH + margins.bottom, 3)
+  };
+}
+
+function getOutlineMargins(model) {
+  const unified = Math.max(0, model.outlineMarginMm ?? model.pitchMm / 2);
+  if (!model.outlineCustomMargins) {
+    return {
+      top: unified,
+      bottom: unified,
+      left: unified,
+      right: unified
+    };
+  }
+  return createOutlineMargins(model.outlineMargins, unified);
+}
+
+function footprintLocalPoint(model, xMm, yMm) {
+  const metrics = getFootprintMetrics(model);
+  return {
+    x: round(xMm - metrics.halfW, 3),
+    y: round(yMm - metrics.halfH, 3)
+  };
+}
+
+function padToFootprintPoint(model, pad, offsetX = 0, offsetY = 0) {
+  return footprintLocalPoint(
+    model,
+    pad.col * model.pitchMm + offsetX,
+    pad.row * model.pitchMm + offsetY
+  );
+}
+
 function footprintPoint(model, xMm, yMm) {
   const centerX = ((model.cols - 1) * model.pitchMm) / 2;
   const centerY = ((model.rows - 1) * model.pitchMm) / 2;
@@ -500,8 +1198,8 @@ function footprintPoint(model, xMm, yMm) {
   };
 }
 
-function generateEasyEdaFootprint(model) {
-  let id = 1;
+function generateEasyEdaPcbShapes(model, startId = 1) {
+  let id = startId;
   const nextId = () => `gge${id++}`;
   const shapes = [];
   const padSize = mmToEe(model.padMm);
@@ -514,8 +1212,8 @@ function generateEasyEdaFootprint(model) {
   }
 
   if (model.includeOutline) {
-    const margin = model.pitchMm / 2;
-    addEasyEdaRectTrack(shapes, model, -margin, -margin, (model.cols - 1) * model.pitchMm + margin, (model.rows - 1) * model.pitchMm + margin, silkWidth, nextId());
+    const margins = getOutlineMargins(model);
+    addEasyEdaRectTrack(shapes, model, -margins.left, -margins.top, (model.cols - 1) * model.pitchMm + margins.right, (model.rows - 1) * model.pitchMm + margins.bottom, silkWidth, nextId());
   }
 
   if (model.includePinNameSilk) {
@@ -540,20 +1238,36 @@ function generateEasyEdaFootprint(model) {
     }
   }
 
+  return shapes;
+}
+
+function generateEasyEdaPcbData(model) {
+  const footprintId = "gge1";
+  const boardOutlineId = "gge2";
+  const shape = [
+    generateEasyEdaBoardOutline(model, boardOutlineId),
+    generateEasyEdaPcbLibShape(model, footprintId)
+  ];
   return {
-    title: model.name,
-    head: `4~1.7.5~${EE_ORIGIN.x}~${EE_ORIGIN.y}~package\`${model.name}\`name\`${model.name}\`pre\`J?\`Contributor\`LocalWeb`,
-    canvas: "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~1~mil~1~45~visible~0.5~400~300",
+    head: {
+      docType: "3",
+      editorVersion: "6.5.22",
+      newgId: true
+    },
+    canvas: "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~5~mil~9~45~visible~0.5",
+    shape,
     layers: DEFAULT_LAYERS,
-    shape: shapes,
     objects: [],
+    systemColor: "#000000~#FFFFFF~#FFFFFF~#000000~#FFFFFF",
+    BBox: getEasyEdaPcbBBox(model),
     DRCRULE: {
       trackWidth: 0.7,
       track2Track: 0.7,
       pad2Pad: 0.8,
       track2Pad: 0.8,
       hole2Hole: 1,
-      holeSize: round(mmToEe(model.drillMm), 3)
+      holeSize: round(mmToEe(model.drillMm), 3),
+      isRealtime: false
     },
     preference: {
       hideFootprints: "",
@@ -562,7 +1276,102 @@ function generateEasyEdaFootprint(model) {
   };
 }
 
+function generateEasyEdaPcbDocument(model) {
+  const dataStr = generateEasyEdaPcbData(model);
+  return {
+    docType: "3",
+    editorVersion: "6.5.22",
+    title: model.name,
+    description: "Generated by dupont-grid-footprint-generator",
+    dataStr: JSON.stringify(dataStr)
+  };
+}
+
+function generateEasyEdaFootprint(model) {
+  const dataStr = {
+    layers: DEFAULT_LAYERS,
+    systemColor: "#000000~#FFFFFF~#FFFFFF~#000000~#FFFFFF",
+    BBox: getEasyEdaPcbBBox(model),
+    DRCRULE: {
+      trackWidth: 0.7,
+      track2Track: 0.7,
+      pad2Pad: 0.8,
+      track2Pad: 0.8,
+      hole2Hole: 1,
+      holeSize: round(mmToEe(model.drillMm), 3),
+      isRealtime: false
+    },
+    preference: {
+      hideFootprints: "",
+      hideNets: ""
+    }
+  };
+  return {
+    docType: "4",
+    editorVersion: "6.5.22",
+    title: `${model.name}_FOOTPRINT`,
+    description: "Generated by dupont-grid-footprint-generator",
+    dataStr: JSON.stringify({
+      head: {
+        docType: "4",
+        editorVersion: "6.5.22",
+        newgId: true,
+        x: EE_ORIGIN.x,
+        y: EE_ORIGIN.y,
+        c_para: {
+          package: model.name,
+          pre: "J?",
+          Contributor: "LocalWeb"
+        }
+      },
+      canvas: "CA~2400~2400~#000000~yes~#FFFFFF~10~1200~1200~line~5~mil~9~45~visible~0.5",
+      shape: generateEasyEdaPcbShapes(model),
+      ...dataStr
+    })
+  };
+}
+
+function generateEasyEdaPcbLibShape(model, id) {
+  const center = footprintPoint(model, ((model.cols - 1) * model.pitchMm) / 2, ((model.rows - 1) * model.pitchMm) / 2);
+  const attrs = `package\`${model.name}\`value\`${model.name}`;
+  const shapes = generateEasyEdaPcbShapes(model, 10).join("#@$");
+  return `LIB~${center.x}~${center.y}~${attrs}~~~${id}~1#@$${shapes}`;
+}
+
+function generateEasyEdaBoardOutline(model, id) {
+  const shapes = [];
+  const margins = getOutlineMargins(model);
+  addEasyEdaRectTrackOnLayer(
+    shapes,
+    model,
+    -margins.left,
+    -margins.top,
+    (model.cols - 1) * model.pitchMm + margins.right,
+    (model.rows - 1) * model.pitchMm + margins.bottom,
+    10,
+    1,
+    id
+  );
+  return shapes[0];
+}
+
+function getEasyEdaPcbBBox(model) {
+  const margins = getOutlineMargins(model);
+  const p1 = footprintPoint(model, -margins.left, -margins.top);
+  const p2 = footprintPoint(model, (model.cols - 1) * model.pitchMm + margins.right, (model.rows - 1) * model.pitchMm + margins.bottom);
+  return {
+    x: round(Math.min(p1.x, p2.x), 3),
+    y: round(Math.min(p1.y, p2.y), 3),
+    width: round(Math.abs(p2.x - p1.x), 3),
+    height: round(Math.abs(p2.y - p1.y), 3)
+  };
+}
+
 function addEasyEdaRectTrack(shapes, model, x1Mm, y1Mm, x2Mm, y2Mm, width, id) {
+  addEasyEdaRectTrackOnLayer(shapes, model, x1Mm, y1Mm, x2Mm, y2Mm, 3, width, id);
+}
+
+function addEasyEdaRectTrackOnLayer(shapes, model, x1Mm, y1Mm, x2Mm, y2Mm, layer, width, id) {
   const left = Math.min(x1Mm, x2Mm);
   const right = Math.max(x1Mm, x2Mm);
   const top = Math.min(y1Mm, y2Mm);
@@ -571,11 +1380,11 @@ function addEasyEdaRectTrack(shapes, model, x1Mm, y1Mm, x2Mm, y2Mm, width, id) {
   const p2 = footprintPoint(model, right, top);
   const p3 = footprintPoint(model, right, bottom);
   const p4 = footprintPoint(model, left, bottom);
-  shapes.push(`TRACK~${width}~3~~${p1.x} ${p1.y} ${p2.x} ${p2.y} ${p3.x} ${p3.y} ${p4.x} ${p4.y} ${p1.x} ${p1.y}~${id}`);
+  shapes.push(`TRACK~${width}~${layer}~~${p1.x} ${p1.y} ${p2.x} ${p2.y} ${p3.x} ${p3.y} ${p4.x} ${p4.y} ${p1.x} ${p1.y}~${id}`);
 }
 
-function generateEasyEdaSymbol(model) {
-  let id = 1;
+function generateEasyEdaSymbol(model, startId = 1) {
+  let id = startId;
   const nextId = () => `gge${id++}`;
   const pins = model.pads;
   const leftCount = Math.ceil(pins.length / 2);
@@ -602,10 +1411,79 @@ function generateEasyEdaSymbol(model) {
   });
 
   return {
+    docType: "2",
     title: model.name,
-    head: `7~1.7.5~400~300~package\`${model.name}\`nameDisplay\`0\`nameAlias\`Model\`Model\`${model.name}\`name\`${model.name}\`pre\`J?\`spicePre\`\`Contributor\`LocalWeb`,
+    description: "Generated by dupont-grid-footprint-generator",
+    head: {
+      docType: "2",
+      editorVersion: "6.5.22",
+      title: model.name,
+      description: "Generated by dupont-grid-footprint-generator",
+      x: 400,
+      y: 300,
+      c_para: {
+        package: model.name,
+        name: model.name,
+        pre: "J?",
+        spicePre: "",
+        Contributor: "LocalWeb"
+      }
+    },
     canvas: "CA~1200~1200~#FFFFFF~yes~#CCCCCC~10~1200~1200~line~10~pixel~5~400~300",
-    shape: shapes
+    shape: shapes,
+    dataStr: {}
+  };
+}
+
+function generateEasyEdaSchematicData(model) {
+  return {
+    head: {
+      docType: "1",
+      editorVersion: "6.5.22",
+      newgId: true,
+      c_para: {
+        "Prefix Start": "1"
+      }
+    },
+    canvas: "CA~1200~1200~#FFFFFF~yes~#CCCCCC~10~1200~1200~line~5~pixel~5",
+    shape: [generateEasyEdaSchematicLibShape(model, "gge1")],
+    colors: {},
+    BBox: getEasyEdaSchematicBBox(model)
+  };
+}
+
+function generateEasyEdaSchematicDocument(model) {
+  return {
+    docType: "5",
+    editorVersion: "6.5.22",
+    title: `${model.name}_Schematic`,
+    description: "Generated by dupont-grid-footprint-generator",
+    colors: {},
+    schematics: [
+      {
+        docType: "1",
+        title: "Sheet_1",
+        description: "",
+        dataStr: JSON.stringify(generateEasyEdaSchematicData(model))
+      }
+    ]
+  };
+}
+
+function generateEasyEdaSchematicLibShape(model, id) {
+  const symbol = generateEasyEdaSymbol(model, 10);
+  const attrs = `package\`${model.name}\`nameAlias\`Model\`Model\`${model.name}\`name\`${model.name}\`pre\`J?\`spicePre\`J`;
+  return `LIB~400~300~${attrs}~~0~${id}#@$${symbol.shape.join("#@$")}`;
+}
+
+function getEasyEdaSchematicBBox(model) {
+  const pinRows = Math.max(Math.ceil(model.pads.length / 2), Math.floor(model.pads.length / 2), 1);
+  const height = pinRows * 30 + 70;
+  return {
+    x: 350,
+    y: 220,
+    width: 270,
+    height
   };
 }
 
@@ -614,6 +1492,7 @@ function makeEasyEdaPin(pin, side, body, y, id) {
   const isLeft = side === "left";
   const dotX = isLeft ? body.x - length : body.x + body.width + length;
   const path = isLeft ? `M ${dotX} ${y} h ${length}` : `M ${dotX} ${y} h -${length}`;
+  const angle = isLeft ? 180 : 0;
   const nameX = isLeft ? body.x + 5 : body.x + body.width - 5;
   const nameAnchor = isLeft ? "start" : "end";
   const numberX = isLeft ? dotX + 4 : dotX - 4;
@@ -624,7 +1503,7 @@ function makeEasyEdaPin(pin, side, body, y, id) {
     : `M ${body.x + body.width + 6} ${y - 4} L ${body.x + body.width + 1} ${y} L ${body.x + body.width + 6} ${y + 4}`;
 
   return [
-    `P~show~0~${sanitizeField(pin.number)}~${dotX}~${y}~~${id}`,
+    `P~show~0~${sanitizeField(pin.number)}~${dotX}~${y}~${angle}~${id}`,
     `${dotX}~${y}`,
     `${path}~#880000`,
     `1~${nameX}~${y + 4}~0~${sanitizeField(pin.name)}~${nameAnchor}~~9pt`,
@@ -636,23 +1515,22 @@ function makeEasyEdaPin(pin, side, body, y, id) {
 
 function generateKicadFootprint(model) {
   const lines = [];
-  const halfW = ((model.cols - 1) * model.pitchMm) / 2;
-  const halfH = ((model.rows - 1) * model.pitchMm) / 2;
-  const outlineX = halfW + model.pitchMm / 2;
-  const outlineY = halfH + model.pitchMm / 2;
+  const metrics = getFootprintMetrics(model);
+  const { halfW, halfH, leftX, rightX, topY, bottomY } = metrics;
+  const partNameText = getPartNameTextPlacement(model);
   lines.push(`(footprint "${model.name}"`);
   lines.push(`  (version 20240108)`);
   lines.push(`  (generator "dupont-grid-local-web")`);
   lines.push(`  (layer "F.Cu")`);
   lines.push(`  (descr "Generated Dupont female header grid")`);
   lines.push(`  (attr through_hole)`);
-  lines.push(`  (fp_text reference "J?" (at 0 ${round(-outlineY - 1.5, 3)} 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))`);
-  lines.push(`  (fp_text value "${model.name}" (at 0 ${round(outlineY + 1.5, 3)} 0) (layer "F.Fab") (effects (font (size 1 1) (thickness 0.15))))`);
+  lines.push(`  (fp_text reference "J?" (at 0 ${round(topY - 1.5, 3)} 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))`);
+  lines.push(`  (fp_text value "${model.name}" (at ${partNameText.x} ${partNameText.y} 0) (layer "F.SilkS") (effects (font (size ${round(partNameText.size, 3)} ${round(partNameText.size, 3)}) (thickness ${partNameText.thickness}))))`);
   if (model.includeOutline) {
-    lines.push(kicadLine(-outlineX, -outlineY, outlineX, -outlineY, model.silkWidthMm));
-    lines.push(kicadLine(outlineX, -outlineY, outlineX, outlineY, model.silkWidthMm));
-    lines.push(kicadLine(outlineX, outlineY, -outlineX, outlineY, model.silkWidthMm));
-    lines.push(kicadLine(-outlineX, outlineY, -outlineX, -outlineY, model.silkWidthMm));
+    lines.push(kicadLine(leftX, topY, rightX, topY, model.silkWidthMm));
+    lines.push(kicadLine(rightX, topY, rightX, bottomY, model.silkWidthMm));
+    lines.push(kicadLine(rightX, bottomY, leftX, bottomY, model.silkWidthMm));
+    lines.push(kicadLine(leftX, bottomY, leftX, topY, model.silkWidthMm));
   }
   for (const item of model.silkscreen) {
     if (item.type === "line") lines.push(kicadLine(item.x1Mm - halfW, item.y1Mm - halfH, item.x2Mm - halfW, item.y2Mm - halfH, model.silkWidthMm));
@@ -684,31 +1562,32 @@ function kicadLine(x1, y1, x2, y2, width) {
 }
 
 function generateKicadSymbol(model) {
-  const pins = model.pads;
-  const leftCount = Math.ceil(pins.length / 2);
-  const bodyHalfH = Math.max(leftCount, pins.length - leftCount, 1) * 2.54 / 2 + 1.27;
-  const bodyHalfW = 8;
-  const pinLength = 5.08;
+  const layout = buildSymbolLayout(model);
+  const bodyHalfH = layout.bodyHalfH;
+  const bodyHalfW = layout.bodyHalfW;
+  const propertyFontSize = 1;
+  const symbolName = escapeKicad(model.name);
+  const commonUnitName = escapeKicad(`${model.name}_0_1`);
+  const pinUnitName = escapeKicad(`${model.name}_1_1`);
   const lines = [];
   lines.push("(kicad_symbol_lib");
-  lines.push("  (version 20231120)");
+  lines.push("  (version 20211014)");
   lines.push("  (generator \"dupont-grid-local-web\")");
-  lines.push(`  (symbol "${model.name}"`);
+  lines.push(`  (symbol "${symbolName}"`);
   lines.push("    (pin_names (offset 1.016))");
   lines.push("    (exclude_from_sim no)");
   lines.push("    (in_bom yes)");
   lines.push("    (on_board yes)");
-  lines.push(`    (property "Reference" "J" (at 0 ${round(-bodyHalfH - 2.54, 3)} 0) (effects (font (size 1.27 1.27))))`);
-  lines.push(`    (property "Value" "${model.name}" (at 0 ${round(bodyHalfH + 2.54, 3)} 0) (effects (font (size 1.27 1.27))))`);
-  lines.push("    (symbol \"body\"");
-  lines.push(`      (rectangle (start ${-bodyHalfW} ${-bodyHalfH}) (end ${bodyHalfW} ${bodyHalfH}) (stroke (width 0.254) (type default)) (fill (type none)))`);
-  pins.forEach((pin, index) => {
-    const side = index < leftCount ? "left" : "right";
-    const sideIndex = side === "left" ? index : index - leftCount;
-    const y = round(bodyHalfH - 1.27 - sideIndex * 2.54, 3);
-    const x = side === "left" ? -bodyHalfW - pinLength : bodyHalfW + pinLength;
-    const angle = side === "left" ? 0 : 180;
-    lines.push(`      (pin passive line (at ${round(x, 3)} ${y} ${angle}) (length ${pinLength}) (name "${escapeKicad(pin.name)}" (effects (font (size 1.27 1.27)))) (number "${escapeKicad(pin.number)}" (effects (font (size 1.27 1.27)))))`);
+  lines.push(`    (property "Reference" "J" (id 0) (at 0 ${round(-bodyHalfH - 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
+  lines.push(`    (property "Value" "${symbolName}" (id 1) (at 0 ${round(bodyHalfH + 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
+  lines.push(`    (property "Footprint" "" (id 2) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
+  lines.push(`    (property "Datasheet" "" (id 3) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
+  lines.push(`    (symbol "${commonUnitName}"`);
+  lines.push(`      (rectangle (start ${-bodyHalfW} ${round(bodyHalfH, 3)}) (end ${bodyHalfW} ${round(-bodyHalfH, 3)}) (stroke (width 0.254) (type default) (color 0 0 0 0)) (fill (type none)))`);
+  lines.push("    )");
+  lines.push(`    (symbol "${pinUnitName}"`);
+  layout.pins.forEach((entry) => {
+    lines.push(`      (pin passive line (at ${round(entry.x, 3)} ${entry.y} ${entry.angle}) (length ${layout.pinLength}) (name "${escapeKicad(entry.pin.name)}" (effects (font (size 1.27 1.27)))) (number "${escapeKicad(entry.pin.number)}" (effects (font (size 1.27 1.27)))))`);
   });
   lines.push("    )");
   lines.push("  )");
@@ -723,11 +1602,37 @@ function escapeKicad(value) {
 function exportFile(kind) {
   if (!assertExportable()) return;
   const model = buildModel();
-  if (kind === "lceda-footprint") {
-    downloadText(`${model.name}.lceda-footprint.json`, JSON.stringify(generateEasyEdaFootprint(model), null, 2), "application/json");
+  if (kind === "kicad-zip") {
+    const files = [
+      {
+        name: `${model.name}.kicad_sym`,
+        content: generateKicadSymbol(model)
+      },
+      {
+        name: `${model.name}.pretty/${model.name}.kicad_mod`,
+        content: generateKicadFootprint(model)
+      }
+    ];
+    downloadBlob(`${model.name}.kicad-source.zip`, createZipBlob(files), "application/zip");
   }
-  if (kind === "lceda-symbol") {
-    downloadText(`${model.name}.lceda-symbol.json`, JSON.stringify(generateEasyEdaSymbol(model), null, 2), "application/json");
+  if (kind === "lceda-zip") {
+    const files = [
+      {
+        name: `${model.name}_Schematic.json`,
+        content: JSON.stringify(generateEasyEdaSchematicDocument(model), null, 2)
+      },
+      {
+        name: `${model.name}_PCB.json`,
+        content: JSON.stringify(generateEasyEdaPcbDocument(model), null, 2)
+      }
+    ];
+    downloadBlob(`${model.name}.lceda-standard.zip`, createZipBlob(files), "application/zip");
+  }
+  if (kind === "lceda-pcb") {
+    downloadText(`${model.name}.lceda-pcb.json`, JSON.stringify(generateEasyEdaPcbDocument(model), null, 2), "application/json");
+  }
+  if (kind === "lceda-schematic") {
+    downloadText(`${model.name}.lceda-schematic.json`, JSON.stringify(generateEasyEdaSchematicDocument(model), null, 2), "application/json");
   }
   if (kind === "kicad-mod") {
     downloadText(`${model.name}.kicad_mod`, generateKicadFootprint(model), "text/plain");
@@ -738,7 +1643,10 @@ function exportFile(kind) {
 }
 
 function downloadText(filename, text, type) {
-  const blob = new Blob([text], { type: `${type};charset=utf-8` });
+  downloadBlob(filename, new Blob([text], { type: `${type};charset=utf-8` }), type);
+}
+
+function downloadBlob(filename, blob, type) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -749,15 +1657,150 @@ function downloadText(filename, text, type) {
   URL.revokeObjectURL(url);
 }
 
-function saveProject() {
+function createZipBlob(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const now = new Date();
+  const { time, date } = toDosDateTime(now);
+
+  for (const file of files) {
+    const filename = file.name.replace(/\\/g, "/");
+    const nameBytes = encoder.encode(filename);
+    const data = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
+    const crc = crc32(data);
+
+    const local = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, time, true);
+    localView.setUint16(12, date, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, data.length, true);
+    localView.setUint32(22, data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    local.set(nameBytes, 30);
+    localParts.push(local, data);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, time, true);
+    centralView.setUint16(14, date, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, data.length, true);
+    centralView.setUint32(24, data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(4, 0, true);
+  endView.setUint16(6, 0, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  endView.setUint16(20, 0, true);
+
+  return new Blob([...localParts, ...centralParts, end], { type: "application/zip" });
+}
+
+function toDosDateTime(value) {
+  const year = Math.max(1980, value.getFullYear());
+  const month = value.getMonth() + 1;
+  const day = value.getDate();
+  const hours = value.getHours();
+  const minutes = value.getMinutes();
+  const seconds = Math.floor(value.getSeconds() / 2);
+  return {
+    time: (hours << 11) | (minutes << 5) | seconds,
+    date: ((year - 1980) << 9) | (month << 5) | day
+  };
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff];
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function createProjectPayload() {
   readSettings();
-  const payload = {
-    version: 1,
+  return {
+    version: 3,
     ...state,
     drawStart: null,
     mode: "select"
   };
+}
+
+function saveProject() {
+  const payload = createProjectPayload();
   downloadText(`${state.partName}.dupont-grid-project.json`, JSON.stringify(payload, null, 2), "application/json");
+}
+
+function applyProjectPayload(payload) {
+  if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
+  state = {
+    ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
+    ...payload,
+    rows: clampInt(payload.rows, 1, 40),
+    cols: clampInt(payload.cols, 1, 40),
+    mode: "select",
+    drawStart: null,
+    selectedKey: null,
+    silkscreen: Array.isArray(payload.silkscreen) ? payload.silkscreen : []
+  };
+  state.outlineMarginMm = nonNegativeNumber(state.outlineMarginMm, 1.27);
+  state.outlineCustomMargins = Boolean(state.outlineCustomMargins);
+  state.outlineMargins = state.outlineCustomMargins
+    ? createOutlineMargins(state.outlineMargins, state.outlineMarginMm)
+    : createOutlineMargins({}, state.outlineMarginMm);
+  state.nameSilkFontSizeMm = positiveNumber(state.nameSilkFontSizeMm, 1);
+  state.symbolRows = normalizeSymbolRows(state.symbolRows || 2);
+  state.symbolPinsPerRow = clampIntOrZero(state.symbolPinsPerRow, 1, 200);
+  state.symbolMirror = Boolean(state.symbolMirror);
+  state.symbolFlip = Boolean(state.symbolFlip);
+  state.symbolSidePins = createSymbolSidePins(state.symbolSidePins);
+  state.layoutColumns = createLayoutColumns(state.layoutColumns);
+  syncInputsFromState();
+  render();
 }
 
 function loadProject(file) {
@@ -766,19 +1809,7 @@ function loadProject(file) {
   reader.onload = () => {
     try {
       const payload = JSON.parse(String(reader.result));
-      if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
-      state = {
-        ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
-        ...payload,
-        rows: clampInt(payload.rows, 1, 40),
-        cols: clampInt(payload.cols, 1, 40),
-        mode: "select",
-        drawStart: null,
-        selectedKey: null,
-        silkscreen: Array.isArray(payload.silkscreen) ? payload.silkscreen : []
-      };
-      syncInputsFromState();
-      render();
+      applyProjectPayload(payload);
     } catch (error) {
       alert(`项目文件无法导入：${error.message}`);
     }
@@ -786,7 +1817,186 @@ function loadProject(file) {
   reader.readAsText(file);
 }
 
-dom.buildGrid.addEventListener("click", rebuildGrid);
+function scheduleProjectCacheSave() {
+  if (cacheSaveTimer) clearTimeout(cacheSaveTimer);
+  cacheSaveTimer = setTimeout(() => {
+    cacheSaveTimer = null;
+    saveProjectCache();
+  }, 250);
+}
+
+function saveProjectCache() {
+  const payload = createProjectPayload();
+  const json = JSON.stringify(payload);
+  writeLocalProjectCache(json);
+  writeCookieProjectCache(json);
+}
+
+function restoreProjectCache() {
+  const payload = readCookieProjectCache() || readLocalProjectCache();
+  if (!payload) return false;
+  try {
+    applyProjectPayload(payload);
+    return true;
+  } catch (error) {
+    console.warn("Project cache could not be restored.", error);
+    return false;
+  }
+}
+
+function writeLocalProjectCache(json) {
+  try {
+    localStorage.setItem(CACHE_LOCAL_STORAGE_KEY, json);
+  } catch (error) {
+    console.warn("Local project cache could not be written.", error);
+  }
+}
+
+function readLocalProjectCache() {
+  try {
+    const json = localStorage.getItem(CACHE_LOCAL_STORAGE_KEY);
+    return json ? JSON.parse(json) : null;
+  } catch (error) {
+    console.warn("Local project cache could not be read.", error);
+    return null;
+  }
+}
+
+function writeCookieProjectCache(json) {
+  try {
+    const encoded = encodeURIComponent(json);
+    const chunks = [];
+    for (let index = 0; index < encoded.length; index += CACHE_CHUNK_SIZE) {
+      chunks.push(encoded.slice(index, index + CACHE_CHUNK_SIZE));
+    }
+    deleteCookieProjectCache(chunks.length);
+    chunks.forEach((chunk, index) => {
+      setCookie(`${CACHE_COOKIE_CHUNK_PREFIX}${index}`, chunk, CACHE_COOKIE_DAYS);
+    });
+    setCookie(CACHE_COOKIE_META, encodeURIComponent(JSON.stringify({
+      version: 2,
+      chunks: chunks.length,
+      updatedAt: Date.now()
+    })), CACHE_COOKIE_DAYS);
+  } catch (error) {
+    console.warn("Cookie project cache could not be written.", error);
+  }
+}
+
+function readCookieProjectCache() {
+  try {
+    const metaText = getCookie(CACHE_COOKIE_META);
+    if (!metaText) return null;
+    const meta = JSON.parse(decodeURIComponent(metaText));
+    const chunkCount = clampInt(meta.chunks, 1, 256);
+    let encoded = "";
+    for (let index = 0; index < chunkCount; index += 1) {
+      const chunk = getCookie(`${CACHE_COOKIE_CHUNK_PREFIX}${index}`);
+      if (!chunk) return null;
+      encoded += chunk;
+    }
+    return JSON.parse(decodeURIComponent(encoded));
+  } catch (error) {
+    console.warn("Cookie project cache could not be read.", error);
+    return null;
+  }
+}
+
+function deleteCookieProjectCache(nextChunkCount = 0) {
+  let oldChunkCount = 0;
+  try {
+    const metaText = getCookie(CACHE_COOKIE_META);
+    if (metaText) oldChunkCount = clampInt(JSON.parse(decodeURIComponent(metaText)).chunks, 1, 256);
+  } catch {}
+  const limit = Math.max(oldChunkCount, nextChunkCount, 64);
+  deleteCookie(CACHE_COOKIE_META);
+  for (let index = 0; index < limit; index += 1) {
+    deleteCookie(`${CACHE_COOKIE_CHUNK_PREFIX}${index}`);
+  }
+}
+
+function setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 86400000).toUTCString();
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function deleteCookie(name) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+}
+
+function getCookie(name) {
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
+    ?.slice(prefix.length) || "";
+}
+
+function getCurrentLayoutColumnWidths() {
+  return {
+    left: dom.appLayout.querySelector(".setup-panel").getBoundingClientRect().width,
+    center: dom.appLayout.querySelector(".workspace").getBoundingClientRect().width,
+    right: dom.appLayout.querySelector(".inspector-panel").getBoundingClientRect().width
+  };
+}
+
+function beginColumnResize(event) {
+  if (window.matchMedia("(max-width: 1100px)").matches) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+
+  const target = event.currentTarget;
+  const side = target.dataset.resizer;
+  const startX = event.clientX;
+  const start = getCurrentLayoutColumnWidths();
+  dom.appLayout.classList.add("resizing");
+  try {
+    target.setPointerCapture(event.pointerId);
+  } catch {}
+
+  const onMove = (moveEvent) => {
+    const dx = moveEvent.clientX - startX;
+    const next = { ...start };
+    if (side === "left") {
+      const total = start.left + start.center;
+      next.left = clampNumber(start.left + dx, MIN_LAYOUT_COLUMNS.left, total - MIN_LAYOUT_COLUMNS.center);
+      next.center = total - next.left;
+    }
+    if (side === "right") {
+      const total = start.center + start.right;
+      next.center = clampNumber(start.center + dx, MIN_LAYOUT_COLUMNS.center, total - MIN_LAYOUT_COLUMNS.right);
+      next.right = total - next.center;
+    }
+    state.layoutColumns = createLayoutColumns(next);
+    applyLayoutColumns();
+  };
+
+  const onEnd = () => {
+    dom.appLayout.classList.remove("resizing");
+    target.removeEventListener("pointermove", onMove);
+    target.removeEventListener("pointerup", onEnd);
+    target.removeEventListener("pointercancel", onEnd);
+    scheduleProjectCacheSave();
+  };
+
+  target.addEventListener("pointermove", onMove);
+  target.addEventListener("pointerup", onEnd);
+  target.addEventListener("pointercancel", onEnd);
+}
+
+dom.columnResizers.forEach((resizer) => {
+  resizer.addEventListener("pointerdown", beginColumnResize);
+});
+
+[
+  dom.rows,
+  dom.cols
+].forEach((input) => {
+  input.addEventListener("input", resizeGridFromInputs);
+  input.addEventListener("change", resizeGridFromInputs);
+});
+
 dom.enableAll.addEventListener("click", () => setAllCells(true));
 dom.disableAll.addEventListener("click", () => setAllCells(false));
 dom.autoNumber.addEventListener("click", autoNumberPins);
@@ -829,7 +2039,10 @@ dom.pinNumber.addEventListener("input", () => {
   if (!cell) return;
   cell.pinNumber = sanitizeField(dom.pinNumber.value);
   renderGrid();
+  renderSymbolPreview();
+  renderPcbPreview();
   renderStats();
+  scheduleProjectCacheSave();
 });
 
 dom.pinName.addEventListener("input", () => {
@@ -837,6 +2050,9 @@ dom.pinName.addEventListener("input", () => {
   if (!cell) return;
   cell.pinName = sanitizeField(dom.pinName.value);
   renderGrid();
+  renderSymbolPreview();
+  renderPcbPreview();
+  scheduleProjectCacheSave();
 });
 
 dom.cellEnabled.addEventListener("change", () => {
@@ -849,21 +2065,31 @@ dom.cellEnabled.addEventListener("change", () => {
 
 [
   dom.partName,
+  dom.nameSilkFontSize,
   dom.pitch,
   dom.pad,
   dom.drill,
   dom.silkWidth,
   dom.outline,
-  dom.pinNameSilk
+  dom.pinNameSilk,
+  dom.outlineMargin,
+  dom.outlineCustomMargins,
+  ...Object.values(dom.outlineMargins),
+  dom.symbolRows,
+  dom.symbolPinsPerRow,
+  dom.symbolMirror,
+  dom.symbolFlip,
+  ...Object.values(dom.symbolSidePins)
 ].forEach((input) => {
   input.addEventListener("input", render);
   input.addEventListener("change", render);
 });
 
-dom.downloadLcedaFootprint.addEventListener("click", () => exportFile("lceda-footprint"));
-dom.downloadLcedaSymbol.addEventListener("click", () => exportFile("lceda-symbol"));
+dom.downloadKicadZip.addEventListener("click", () => exportFile("kicad-zip"));
 dom.downloadKicadMod.addEventListener("click", () => exportFile("kicad-mod"));
 dom.downloadKicadSym.addEventListener("click", () => exportFile("kicad-sym"));
 
-syncInputsFromState();
-render();
+if (!restoreProjectCache()) {
+  syncInputsFromState();
+  render();
+}

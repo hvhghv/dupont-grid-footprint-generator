@@ -10,17 +10,21 @@
   <header class="app-header">
     <div>
       <h1>杜邦座器件与 PCB 封装生成器</h1>
-      <p>本地网页应用，按网格生成立创 EDA 标准版 JSON 与 KiCad 备用文件。</p>
+      <p>本地网页应用，按网格生成 KiCad 器件与 PCB 封装源文件。</p>
     </div>
     <div class="status-pill" id="projectStatus">未生成</div>
   </header>
 
-  <main class="layout">
+  <main id="appLayout" class="layout">
     <aside class="panel setup-panel">
       <h2>器件尺寸</h2>
       <label>
         器件名称
         <input id="partName" type="text" value="DUPONT_GRID" spellcheck="false">
+      </label>
+      <label>
+        名称丝印字号 mm
+        <input id="nameSilkFontSizeInput" type="number" min="0.4" step="0.01" value="1">
       </label>
       <div class="field-row">
         <label>
@@ -56,8 +60,73 @@
         <label><input id="outlineInput" type="checkbox" checked> 自动生成外框丝印</label>
         <label><input id="pinNameSilkInput" type="checkbox"> 导出引脚名丝印</label>
       </div>
-      <button id="buildGridButton" class="primary">生成网格</button>
-
+      <label>
+        外框丝印距离 mm
+        <input id="outlineMarginInput" type="number" min="0" step="0.01" value="1.27">
+      </label>
+      <div class="checkboxes">
+        <label><input id="outlineCustomMarginsInput" type="checkbox"> 分别设置外框四边距离</label>
+      </div>
+      <div id="outlineMarginsPanel" class="side-options hidden">
+        <div class="subtle-label">外框四边距离 mm</div>
+        <div class="side-count-grid">
+          <label>
+            上
+            <input id="outlineTopMarginInput" type="number" min="0" step="0.01" placeholder="同上">
+          </label>
+          <label>
+            下
+            <input id="outlineBottomMarginInput" type="number" min="0" step="0.01" placeholder="同上">
+          </label>
+          <label>
+            左
+            <input id="outlineLeftMarginInput" type="number" min="0" step="0.01" placeholder="同上">
+          </label>
+          <label>
+            右
+            <input id="outlineRightMarginInput" type="number" min="0" step="0.01" placeholder="同上">
+          </label>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>
+          器件行数
+          <select id="symbolRowsInput">
+            <option value="1">单行</option>
+            <option value="2" selected>双行</option>
+            <option value="4">四行（上/下/左/右）</option>
+          </select>
+        </label>
+        <label>
+          每行引脚数
+          <input id="symbolPinsPerRowInput" type="number" min="1" max="200" placeholder="自动">
+        </label>
+      </div>
+      <div class="checkboxes">
+        <label><input id="symbolMirrorInput" type="checkbox"> 器件左右镜像</label>
+        <label><input id="symbolFlipInput" type="checkbox"> 器件上下翻转</label>
+      </div>
+      <div id="symbolFourOptions" class="side-options hidden">
+        <div class="subtle-label">四行引脚数</div>
+        <div class="side-count-grid">
+          <label>
+            上
+            <input id="symbolTopPinsInput" type="number" min="1" max="200" placeholder="自动">
+          </label>
+          <label>
+            下
+            <input id="symbolBottomPinsInput" type="number" min="1" max="200" placeholder="自动">
+          </label>
+          <label>
+            左
+            <input id="symbolLeftPinsInput" type="number" min="1" max="200" placeholder="自动">
+          </label>
+          <label>
+            右
+            <input id="symbolRightPinsInput" type="number" min="1" max="200" placeholder="自动">
+          </label>
+        </div>
+      </div>
       <h2>批量操作</h2>
       <div class="button-grid">
         <button id="enableAllButton">全部启用</button>
@@ -75,6 +144,8 @@
         </label>
       </div>
     </aside>
+
+    <div class="column-resizer" data-resizer="left" role="separator" aria-label="调整左栏和中间栏宽度"></div>
 
     <section class="workspace">
       <div class="toolbar">
@@ -98,6 +169,8 @@
         </div>
       </div>
     </section>
+
+    <div class="column-resizer" data-resizer="right" role="separator" aria-label="调整中间栏和右栏宽度"></div>
 
     <aside class="panel inspector-panel">
       <h2>当前格子</h2>
@@ -124,12 +197,20 @@
         <div><dt>启用焊孔</dt><dd id="activeCellsStat">0</dd></div>
         <div><dt>丝印图元</dt><dd id="silkStat">0</dd></div>
       </dl>
-      <div id="validationBox" class="validation-box">等待生成。</div>
+
+      <h2>器件预览</h2>
+      <div class="symbol-preview-wrap">
+        <svg id="symbolPreview" class="symbol-preview" aria-label="KiCad 器件预览"></svg>
+      </div>
+
+      <h2>PCB 预览</h2>
+      <div class="pcb-preview-wrap">
+        <svg id="pcbPreview" class="pcb-preview" aria-label="KiCad PCB 封装预览"></svg>
+      </div>
 
       <h2>导出</h2>
       <div class="export-list">
-        <button id="downloadLcedaFootprint" class="primary">立创 EDA 封装 JSON</button>
-        <button id="downloadLcedaSymbol">立创 EDA 器件 JSON</button>
+        <button id="downloadKicadZip" class="primary">KiCad 源文件 ZIP</button>
         <button id="downloadKicadMod">KiCad 封装</button>
         <button id="downloadKicadSym">KiCad 器件</button>
       </div>
