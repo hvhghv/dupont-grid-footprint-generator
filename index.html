@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>杜邦座器件与封装生成器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>杜邦座器件与 PCB 封装生成器</h1>
+      <p>本地网页应用，按网格生成立创 EDA 标准版 JSON 与 KiCad 备用文件。</p>
+    </div>
+    <div class="status-pill" id="projectStatus">未生成</div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel setup-panel">
+      <h2>器件尺寸</h2>
+      <label>
+        器件名称
+        <input id="partName" type="text" value="DUPONT_GRID" spellcheck="false">
+      </label>
+      <div class="field-row">
+        <label>
+          高度 / 行
+          <input id="rowsInput" type="number" min="1" max="40" value="3">
+        </label>
+        <label>
+          宽度 / 列
+          <input id="colsInput" type="number" min="1" max="40" value="8">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>
+          孔距 mm
+          <input id="pitchInput" type="number" min="0.5" step="0.01" value="2.54">
+        </label>
+        <label>
+          焊盘 mm
+          <input id="padInput" type="number" min="0.2" step="0.01" value="1.8">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>
+          钻孔 mm
+          <input id="drillInput" type="number" min="0.1" step="0.01" value="1.0">
+        </label>
+        <label>
+          丝印线宽 mm
+          <input id="silkWidthInput" type="number" min="0.05" step="0.01" value="0.15">
+        </label>
+      </div>
+      <div class="checkboxes">
+        <label><input id="outlineInput" type="checkbox" checked> 自动生成外框丝印</label>
+        <label><input id="pinNameSilkInput" type="checkbox"> 导出引脚名丝印</label>
+      </div>
+      <button id="buildGridButton" class="primary">生成网格</button>
+
+      <h2>批量操作</h2>
+      <div class="button-grid">
+        <button id="enableAllButton">全部启用</button>
+        <button id="disableAllButton">全部禁用</button>
+        <button id="autoNumberButton">自动编号</button>
+        <button id="clearNamesButton">清空命名</button>
+      </div>
+
+      <h2>项目文件</h2>
+      <div class="button-grid">
+        <button id="saveProjectButton">保存项目 JSON</button>
+        <label class="file-button">
+          导入项目 JSON
+          <input id="projectFileInput" type="file" accept="application/json,.json">
+        </label>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <div class="toolbar">
+        <div class="mode-group" role="group" aria-label="编辑模式">
+          <button class="mode-button active" data-mode="select">选择</button>
+          <button class="mode-button" data-mode="line">线</button>
+          <button class="mode-button" data-mode="rect">矩形</button>
+          <button class="mode-button" data-mode="text">文本</button>
+        </div>
+        <label class="text-inline">
+          丝印文本
+          <input id="silkTextInput" type="text" value="J1" spellcheck="false">
+        </label>
+        <button id="undoSilkButton">撤销丝印</button>
+      </div>
+
+      <div class="surface-wrap">
+        <div id="gridSurface" class="grid-surface" aria-label="器件网格">
+          <div id="cellGrid" class="cell-grid"></div>
+          <svg id="silkSvg" class="silk-svg" aria-label="丝印绘制层"></svg>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel inspector-panel">
+      <h2>当前格子</h2>
+      <div id="emptySelection" class="empty-state">点击格子启用或选择。</div>
+      <div id="cellInspector" class="cell-inspector hidden">
+        <div class="selected-cell-title" id="selectedCellTitle"></div>
+        <label>
+          引脚编号
+          <input id="pinNumberInput" type="text" spellcheck="false">
+        </label>
+        <label>
+          引脚名称
+          <input id="pinNameInput" type="text" placeholder="例如 VCC / GND / RX" spellcheck="false">
+        </label>
+        <label class="checkbox-line">
+          <input id="cellEnabledInput" type="checkbox">
+          启用这个杜邦母座焊孔
+        </label>
+      </div>
+
+      <h2>生成结果</h2>
+      <dl class="stats">
+        <div><dt>总格子</dt><dd id="totalCellsStat">0</dd></div>
+        <div><dt>启用焊孔</dt><dd id="activeCellsStat">0</dd></div>
+        <div><dt>丝印图元</dt><dd id="silkStat">0</dd></div>
+      </dl>
+      <div id="validationBox" class="validation-box">等待生成。</div>
+
+      <h2>导出</h2>
+      <div class="export-list">
+        <button id="downloadLcedaFootprint" class="primary">立创 EDA 封装 JSON</button>
+        <button id="downloadLcedaSymbol">立创 EDA 器件 JSON</button>
+        <button id="downloadKicadMod">KiCad 封装</button>
+        <button id="downloadKicadSym">KiCad 器件</button>
+      </div>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
