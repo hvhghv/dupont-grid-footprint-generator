@@ -824,9 +824,11 @@ function assignPinsToSymbolSides(pins, model, configuredRows) {
     : Math.max(1, Math.ceil(Math.max(pins.length, 1) / configuredRows));
 
   if (configuredRows === 4) {
-    assignFourSidePins(baseSidePins, pins, model, pinsPerRow);
+    assignFourSidePins(baseSidePins, pins, model);
+  } else if (configuredRows === 2) {
+    assignInterleavedTwoSidePins(baseSidePins, pins);
   } else {
-    const sideSequence = configuredRows === 2 ? ["left", "right"] : ["left"];
+    const sideSequence = ["left"];
     const groupCount = Math.max(configuredRows, Math.ceil(Math.max(pins.length, 1) / pinsPerRow));
     for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
       const side = sideSequence[groupIndex % sideSequence.length];
@@ -838,41 +840,70 @@ function assignPinsToSymbolSides(pins, model, configuredRows) {
   return transformSymbolSidePins(baseSidePins, model);
 }
 
-function assignFourSidePins(sidePins, pins, model, pinsPerRow) {
+function assignInterleavedTwoSidePins(sidePins, pins) {
+  // Dual-row headers usually number pins in a left/right interleaved sequence.
+  assignRoundRobinPins(sidePins, pins, ["left", "right"]);
+}
+
+function assignFourSidePins(sidePins, pins, model) {
   const sideCounts = createSymbolSidePins(model.symbolSidePins);
   const hasSideCounts = SYMBOL_SIDES.some((side) => sideCounts[side] > 0);
 
   if (!hasSideCounts) {
-    const groupCount = Math.max(4, Math.ceil(Math.max(pins.length, 1) / pinsPerRow));
-    for (let groupIndex = 0; groupIndex < groupCount; groupIndex += 1) {
-      const side = SYMBOL_SIDES[groupIndex % SYMBOL_SIDES.length];
-      const start = groupIndex * pinsPerRow;
-      sidePins[side].push(...pins.slice(start, start + pinsPerRow));
-    }
+    assignRoundRobinPins(sidePins, pins, SYMBOL_SIDES);
     return;
   }
 
-  const fixedTotal = SYMBOL_SIDES.reduce((sum, side) => sum + sideCounts[side], 0);
   const autoSides = SYMBOL_SIDES.filter((side) => sideCounts[side] === 0);
-  const remainingForAuto = Math.max(0, pins.length - fixedTotal);
-  const autoCount = model.symbolPinsPerRow > 0
-    ? Math.max(1, Math.floor(model.symbolPinsPerRow))
-    : autoSides.length
-      ? Math.ceil(remainingForAuto / autoSides.length)
-      : 0;
-  let cursor = 0;
+  const targets = {};
+  let remaining = pins.length;
 
   for (const side of SYMBOL_SIDES) {
-    const count = sideCounts[side] > 0 ? sideCounts[side] : autoCount;
-    if (count > 0) {
-      sidePins[side].push(...pins.slice(cursor, cursor + count));
-      cursor += count;
-    }
+    const fixed = Math.min(sideCounts[side], remaining);
+    targets[side] = fixed;
+    remaining -= fixed;
   }
 
-  if (cursor < pins.length) {
-    sidePins.right.push(...pins.slice(cursor));
+  if (remaining > 0 && autoSides.length) {
+    for (let index = 0; index < remaining; index += 1) {
+      const side = autoSides[index % autoSides.length];
+      targets[side] += 1;
+    }
+  } else if (remaining > 0) {
+    targets.right += remaining;
   }
+
+  assignRoundRobinPinsWithTargets(sidePins, pins, SYMBOL_SIDES, targets);
+}
+
+function assignRoundRobinPins(sidePins, pins, sideOrder) {
+  pins.forEach((pin, index) => {
+    sidePins[sideOrder[index % sideOrder.length]].push(pin);
+  });
+}
+
+function assignRoundRobinPinsWithTargets(sidePins, pins, sideOrder, targets) {
+  const assigned = Object.fromEntries(sideOrder.map((side) => [side, 0]));
+  let cursor = 0;
+
+  pins.forEach((pin) => {
+    let placed = false;
+    for (let offset = 0; offset < sideOrder.length; offset += 1) {
+      const side = sideOrder[(cursor + offset) % sideOrder.length];
+      if ((assigned[side] || 0) >= (targets[side] || 0)) continue;
+      sidePins[side].push(pin);
+      assigned[side] += 1;
+      cursor = (cursor + offset + 1) % sideOrder.length;
+      placed = true;
+      break;
+    }
+
+    if (!placed) {
+      const fallbackSide = sideOrder[sideOrder.length - 1];
+      sidePins[fallbackSide].push(pin);
+      assigned[fallbackSide] += 1;
+    }
+  });
 }
 
 function createSymbolSideBuckets() {
@@ -1386,28 +1417,16 @@ function addEasyEdaRectTrackOnLayer(shapes, model, x1Mm, y1Mm, x2Mm, y2Mm, layer
 function generateEasyEdaSymbol(model, startId = 1) {
   let id = startId;
   const nextId = () => `gge${id++}`;
-  const pins = model.pads;
-  const leftCount = Math.ceil(pins.length / 2);
-  const rightPins = pins.slice(leftCount);
-  const leftPins = pins.slice(0, leftCount);
-  const rowGap = 30;
-  const body = {
-    x: 400,
-    y: 250,
-    width: 170,
-    height: Math.max(leftPins.length, rightPins.length, 1) * rowGap + 20
-  };
+  const geometry = buildEasyEdaSymbolGeometry(model);
+  const { body } = geometry;
   const shapes = [
     `R~${body.x}~${body.y}~~~${body.width}~${body.height}~#000000~1~0~none~${nextId()}`,
     `T~N~${body.x + body.width / 2}~${body.y - 14}~0~#000000~~9pt~normal~normal~~comment~${model.name}~1~middle~${nextId()}`,
     `T~P~${body.x + body.width / 2}~${body.y + body.height + 18}~0~#000000~~9pt~normal~normal~~comment~J?~1~middle~${nextId()}`
   ];
 
-  leftPins.forEach((pin, index) => {
-    shapes.push(makeEasyEdaPin(pin, "left", body, body.y + 20 + index * rowGap, nextId()));
-  });
-  rightPins.forEach((pin, index) => {
-    shapes.push(makeEasyEdaPin(pin, "right", body, body.y + 20 + index * rowGap, nextId()));
+  geometry.layout.pins.forEach((pinEntry) => {
+    shapes.push(makeEasyEdaPin(pinEntry, geometry, nextId()));
   });
 
   return {
@@ -1477,38 +1496,120 @@ function generateEasyEdaSchematicLibShape(model, id) {
 }
 
 function getEasyEdaSchematicBBox(model) {
-  const pinRows = Math.max(Math.ceil(model.pads.length / 2), Math.floor(model.pads.length / 2), 1);
-  const height = pinRows * 30 + 70;
+  const geometry = buildEasyEdaSymbolGeometry(model);
   return {
-    x: 350,
-    y: 220,
-    width: 270,
-    height
+    x: round(geometry.body.x - 70, 3),
+    y: round(geometry.body.y - 70, 3),
+    width: round(geometry.body.width + 140, 3),
+    height: round(geometry.body.height + 140, 3)
   };
 }
 
-function makeEasyEdaPin(pin, side, body, y, id) {
-  const length = 24;
-  const isLeft = side === "left";
-  const dotX = isLeft ? body.x - length : body.x + body.width + length;
-  const path = isLeft ? `M ${dotX} ${y} h ${length}` : `M ${dotX} ${y} h -${length}`;
-  const angle = isLeft ? 180 : 0;
-  const nameX = isLeft ? body.x + 5 : body.x + body.width - 5;
-  const nameAnchor = isLeft ? "start" : "end";
-  const numberX = isLeft ? dotX + 4 : dotX - 4;
-  const numberAnchor = isLeft ? "start" : "end";
-  const bubbleX = isLeft ? dotX + 17 : dotX - 17;
-  const clockPath = isLeft
-    ? `M ${body.x - 6} ${y - 4} L ${body.x - 1} ${y} L ${body.x - 6} ${y + 4}`
-    : `M ${body.x + body.width + 6} ${y - 4} L ${body.x + body.width + 1} ${y} L ${body.x + body.width + 6} ${y + 4}`;
+function buildEasyEdaSymbolGeometry(model) {
+  const layout = buildSymbolLayout(model);
+  const scale = 12;
+  const centerX = 400;
+  const centerY = 300;
+  const bodyHalfW = layout.bodyHalfW * scale;
+  const bodyHalfH = layout.bodyHalfH * scale;
+  return {
+    layout,
+    scale,
+    centerX,
+    centerY,
+    body: {
+      x: round(centerX - bodyHalfW, 3),
+      y: round(centerY - bodyHalfH, 3),
+      width: round(bodyHalfW * 2, 3),
+      height: round(bodyHalfH * 2, 3)
+    }
+  };
+}
+
+function easyEdaSymbolPoint(geometry, xMm, yMm) {
+  return {
+    x: round(geometry.centerX + xMm * geometry.scale, 3),
+    y: round(geometry.centerY - yMm * geometry.scale, 3)
+  };
+}
+
+function makeEasyEdaPin(pinEntry, geometry, id) {
+  const { pin, side } = pinEntry;
+  const { layout, body } = geometry;
+  const outside = easyEdaSymbolPoint(geometry, pinEntry.x, pinEntry.y);
+  let path;
+  let angle;
+  let nameX;
+  let nameY;
+  let nameAnchor;
+  let numberX;
+  let numberY;
+  let numberAnchor;
+  let bubbleX;
+  let bubbleY;
+  let clockPath;
+
+  if (side === "left") {
+    const bodyPoint = easyEdaSymbolPoint(geometry, -layout.bodyHalfW, pinEntry.y);
+    path = `M ${outside.x} ${outside.y} h ${round(bodyPoint.x - outside.x, 3)}`;
+    angle = 180;
+    nameX = body.x + 5;
+    nameY = outside.y + 4;
+    nameAnchor = "start";
+    numberX = outside.x + 4;
+    numberY = outside.y - 5;
+    numberAnchor = "start";
+    bubbleX = outside.x + 17;
+    bubbleY = outside.y;
+    clockPath = `M ${body.x - 6} ${outside.y - 4} L ${body.x - 1} ${outside.y} L ${body.x - 6} ${outside.y + 4}`;
+  } else if (side === "right") {
+    const bodyPoint = easyEdaSymbolPoint(geometry, layout.bodyHalfW, pinEntry.y);
+    path = `M ${outside.x} ${outside.y} h ${round(bodyPoint.x - outside.x, 3)}`;
+    angle = 0;
+    nameX = body.x + body.width - 5;
+    nameY = outside.y + 4;
+    nameAnchor = "end";
+    numberX = outside.x - 4;
+    numberY = outside.y - 5;
+    numberAnchor = "end";
+    bubbleX = outside.x - 17;
+    bubbleY = outside.y;
+    clockPath = `M ${body.x + body.width + 6} ${outside.y - 4} L ${body.x + body.width + 1} ${outside.y} L ${body.x + body.width + 6} ${outside.y + 4}`;
+  } else if (side === "top") {
+    const bodyPoint = easyEdaSymbolPoint(geometry, pinEntry.x, layout.bodyHalfH);
+    path = `M ${outside.x} ${outside.y} v ${round(bodyPoint.y - outside.y, 3)}`;
+    angle = 270;
+    nameX = outside.x;
+    nameY = body.y + 12;
+    nameAnchor = "middle";
+    numberX = outside.x;
+    numberY = outside.y + 12;
+    numberAnchor = "middle";
+    bubbleX = outside.x;
+    bubbleY = outside.y + 17;
+    clockPath = `M ${outside.x - 4} ${body.y - 6} L ${outside.x} ${body.y - 1} L ${outside.x + 4} ${body.y - 6}`;
+  } else {
+    const bodyPoint = easyEdaSymbolPoint(geometry, pinEntry.x, -layout.bodyHalfH);
+    path = `M ${outside.x} ${outside.y} v ${round(bodyPoint.y - outside.y, 3)}`;
+    angle = 90;
+    nameX = outside.x;
+    nameY = body.y + body.height - 6;
+    nameAnchor = "middle";
+    numberX = outside.x;
+    numberY = outside.y - 8;
+    numberAnchor = "middle";
+    bubbleX = outside.x;
+    bubbleY = outside.y - 17;
+    clockPath = `M ${outside.x - 4} ${body.y + body.height + 6} L ${outside.x} ${body.y + body.height + 1} L ${outside.x + 4} ${body.y + body.height + 6}`;
+  }
 
   return [
-    `P~show~0~${sanitizeField(pin.number)}~${dotX}~${y}~${angle}~${id}`,
-    `${dotX}~${y}`,
+    `P~show~0~${sanitizeField(pin.number)}~${outside.x}~${outside.y}~${angle}~${id}`,
+    `${outside.x}~${outside.y}`,
     `${path}~#880000`,
-    `1~${nameX}~${y + 4}~0~${sanitizeField(pin.name)}~${nameAnchor}~~9pt`,
-    `1~${numberX}~${y - 5}~0~${sanitizeField(pin.number)}~${numberAnchor}~~9pt`,
-    `0~${bubbleX}~${y}`,
+    `1~${nameX}~${nameY}~0~${sanitizeField(pin.name)}~${nameAnchor}~~9pt`,
+    `1~${numberX}~${numberY}~0~${sanitizeField(pin.number)}~${numberAnchor}~~9pt`,
+    `0~${bubbleX}~${bubbleY}`,
     `0~${clockPath}`
   ].join("^^");
 }
