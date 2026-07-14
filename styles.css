@@ -170,6 +170,24 @@ label {
   gap: 10px;
 }
 
+.grid-adjust-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.grid-adjust-button {
+  min-width: 0;
+  padding: 7px 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.bulk-action-grid {
+  display: grid;
+  gap: 8px;
+}
+
 .checkboxes {
   display: grid;
   gap: 8px;
@@ -510,8 +528,11 @@ label {
 .pcb-preview .pcb-pin-name,
 .pcb-preview .pcb-silk-text {
   fill: #854d0e;
-  font-size: 0.8px;
   dominant-baseline: middle;
+}
+
+.pcb-preview .pcb-silk-text {
+  font-size: 0.8px;
 }
 
 .pcb-preview .pcb-part-name {

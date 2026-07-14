@@ -36,6 +36,16 @@
           <input id="colsInput" type="number" min="1" max="40" value="8">
         </label>
       </div>
+      <div class="grid-adjust-grid" aria-label="增减边缘行列">
+        <button class="grid-adjust-button" data-grid-action="remove" data-grid-edge="top">减少上</button>
+        <button class="grid-adjust-button" data-grid-action="remove" data-grid-edge="bottom">减少下</button>
+        <button class="grid-adjust-button" data-grid-action="remove" data-grid-edge="left">减少左</button>
+        <button class="grid-adjust-button" data-grid-action="remove" data-grid-edge="right">减少右</button>
+        <button class="grid-adjust-button" data-grid-action="add" data-grid-edge="top">增加上</button>
+        <button class="grid-adjust-button" data-grid-action="add" data-grid-edge="bottom">增加下</button>
+        <button class="grid-adjust-button" data-grid-action="add" data-grid-edge="left">增加左</button>
+        <button class="grid-adjust-button" data-grid-action="add" data-grid-edge="right">增加右</button>
+      </div>
       <div class="field-row">
         <label>
           孔距 mm
@@ -58,7 +68,32 @@
       </div>
       <div class="checkboxes">
         <label><input id="outlineInput" type="checkbox" checked> 自动生成外框丝印</label>
-        <label><input id="pinNameSilkInput" type="checkbox"> 导出引脚名丝印</label>
+      </div>
+      <div class="field-row">
+        <label>
+          引脚名丝印
+          <select id="pinNameSilkPositionInput">
+            <option value="none" selected>不显示</option>
+            <option value="top">正上</option>
+            <option value="bottom">正下</option>
+            <option value="left">正左</option>
+            <option value="right">正右</option>
+          </select>
+        </label>
+        <label>
+          引脚名字号 mm
+          <input id="pinNameSilkFontSizeInput" type="number" min="0.4" step="0.01" value="0.8">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>
+          左右偏移 mm
+          <input id="pinNameSilkOffsetXInput" type="number" step="0.01" value="0" placeholder="左- / 右+">
+        </label>
+        <label>
+          上下偏移 mm
+          <input id="pinNameSilkOffsetYInput" type="number" step="0.01" value="0" placeholder="上- / 下+">
+        </label>
       </div>
       <label>
         外框丝印距离 mm
@@ -134,6 +169,41 @@
         <button id="autoNumberButton">自动编号</button>
         <button id="clearNamesButton">清空命名</button>
       </div>
+      <h2>批量引脚丝印</h2>
+      <label>
+        引脚编号
+        <input id="bulkPinStylePinsInput" type="text" placeholder="例如 1,2,5-8" spellcheck="false">
+      </label>
+      <div class="field-row">
+        <label>
+          位置
+          <select id="bulkPinNameSilkPositionInput">
+            <option value="none">不显示</option>
+            <option value="top" selected>正上</option>
+            <option value="bottom">正下</option>
+            <option value="left">正左</option>
+            <option value="right">正右</option>
+          </select>
+        </label>
+        <label>
+          字号 mm
+          <input id="bulkPinNameSilkFontSizeInput" type="number" min="0.4" step="0.01" value="0.8">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>
+          左右偏移 mm
+          <input id="bulkPinNameSilkOffsetXInput" type="number" step="0.01" value="0" placeholder="左- / 右+">
+        </label>
+        <label>
+          上下偏移 mm
+          <input id="bulkPinNameSilkOffsetYInput" type="number" step="0.01" value="0" placeholder="上- / 下+">
+        </label>
+      </div>
+      <div class="bulk-action-grid">
+        <button id="useSelectedPinStyleButton">选择当前引脚为模版</button>
+        <button id="applyPinStyleButton">应用到指定引脚</button>
+      </div>
 
       <h2>项目文件</h2>
       <div class="button-grid">
@@ -185,6 +255,32 @@
           引脚名称
           <input id="pinNameInput" type="text" placeholder="例如 VCC / GND / RX" spellcheck="false">
         </label>
+        <div class="field-row">
+          <label>
+            引脚名丝印
+            <select id="cellPinNameSilkPositionInput">
+              <option value="none">不显示</option>
+              <option value="top">正上</option>
+              <option value="bottom">正下</option>
+              <option value="left">正左</option>
+              <option value="right">正右</option>
+            </select>
+          </label>
+          <label>
+            丝印字号 mm
+            <input id="cellPinNameSilkFontSizeInput" type="number" min="0.4" step="0.01">
+          </label>
+        </div>
+        <div class="field-row">
+          <label>
+            左右偏移 mm
+            <input id="cellPinNameSilkOffsetXInput" type="number" step="0.01" placeholder="左- / 右+">
+          </label>
+          <label>
+            上下偏移 mm
+            <input id="cellPinNameSilkOffsetYInput" type="number" step="0.01" placeholder="上- / 下+">
+          </label>
+        </div>
         <label class="checkbox-line">
           <input id="cellEnabledInput" type="checkbox">
           启用这个杜邦母座焊孔

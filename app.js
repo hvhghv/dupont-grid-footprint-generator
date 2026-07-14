@@ -24,6 +24,7 @@ const CACHE_COOKIE_DAYS = 180;
 const CACHE_CHUNK_SIZE = 3500;
 const DEFAULT_LAYOUT_COLUMNS = { left: 300, center: 0, right: 300 };
 const MIN_LAYOUT_COLUMNS = { left: 240, center: 420, right: 260 };
+const PIN_NAME_SILK_POSITIONS = ["none", "top", "bottom", "left", "right"];
 
 let state = createState(3, 8);
 let cacheSaveTimer = null;
@@ -34,12 +35,16 @@ const dom = {
   nameSilkFontSize: document.querySelector("#nameSilkFontSizeInput"),
   rows: document.querySelector("#rowsInput"),
   cols: document.querySelector("#colsInput"),
+  gridAdjustButtons: Array.from(document.querySelectorAll(".grid-adjust-button")),
   pitch: document.querySelector("#pitchInput"),
   pad: document.querySelector("#padInput"),
   drill: document.querySelector("#drillInput"),
   silkWidth: document.querySelector("#silkWidthInput"),
   outline: document.querySelector("#outlineInput"),
-  pinNameSilk: document.querySelector("#pinNameSilkInput"),
+  pinNameSilkPosition: document.querySelector("#pinNameSilkPositionInput"),
+  pinNameSilkFontSize: document.querySelector("#pinNameSilkFontSizeInput"),
+  pinNameSilkOffsetX: document.querySelector("#pinNameSilkOffsetXInput"),
+  pinNameSilkOffsetY: document.querySelector("#pinNameSilkOffsetYInput"),
   outlineMargin: document.querySelector("#outlineMarginInput"),
   outlineCustomMargins: document.querySelector("#outlineCustomMarginsInput"),
   outlineMarginsPanel: document.querySelector("#outlineMarginsPanel"),
@@ -64,6 +69,13 @@ const dom = {
   disableAll: document.querySelector("#disableAllButton"),
   autoNumber: document.querySelector("#autoNumberButton"),
   clearNames: document.querySelector("#clearNamesButton"),
+  bulkPinStylePins: document.querySelector("#bulkPinStylePinsInput"),
+  bulkPinNameSilkPosition: document.querySelector("#bulkPinNameSilkPositionInput"),
+  bulkPinNameSilkFontSize: document.querySelector("#bulkPinNameSilkFontSizeInput"),
+  bulkPinNameSilkOffsetX: document.querySelector("#bulkPinNameSilkOffsetXInput"),
+  bulkPinNameSilkOffsetY: document.querySelector("#bulkPinNameSilkOffsetYInput"),
+  useSelectedPinStyle: document.querySelector("#useSelectedPinStyleButton"),
+  applyPinStyle: document.querySelector("#applyPinStyleButton"),
   saveProject: document.querySelector("#saveProjectButton"),
   projectFile: document.querySelector("#projectFileInput"),
   cellGrid: document.querySelector("#cellGrid"),
@@ -78,6 +90,10 @@ const dom = {
   selectedCellTitle: document.querySelector("#selectedCellTitle"),
   pinNumber: document.querySelector("#pinNumberInput"),
   pinName: document.querySelector("#pinNameInput"),
+  cellPinNameSilkPosition: document.querySelector("#cellPinNameSilkPositionInput"),
+  cellPinNameSilkFontSize: document.querySelector("#cellPinNameSilkFontSizeInput"),
+  cellPinNameSilkOffsetX: document.querySelector("#cellPinNameSilkOffsetXInput"),
+  cellPinNameSilkOffsetY: document.querySelector("#cellPinNameSilkOffsetYInput"),
   cellEnabled: document.querySelector("#cellEnabledInput"),
   totalCells: document.querySelector("#totalCellsStat"),
   activeCells: document.querySelector("#activeCellsStat"),
@@ -102,6 +118,10 @@ function createState(rows, cols) {
     partName: "DUPONT_GRID",
     includeOutline: true,
     includePinNameSilk: false,
+    pinNameSilkPosition: "none",
+    pinNameSilkFontSizeMm: 0.8,
+    pinNameSilkOffsetXMm: 0,
+    pinNameSilkOffsetYMm: 0,
     outlineMarginMm: 1.27,
     outlineCustomMargins: false,
     outlineMargins: createOutlineMargins(),
@@ -117,16 +137,36 @@ function createState(rows, cols) {
     cells: Array.from({ length: rows * cols }, (_, index) => {
       const row = Math.floor(index / cols);
       const col = index % cols;
-      return {
-        row,
-        col,
-        enabled: false,
-        pinNumber: "",
-        pinName: ""
-      };
+      return createGridCell(row, col);
     }),
     silkscreen: []
   };
+}
+
+function createGridCell(row, col, source = {}) {
+  const values = source || {};
+  return {
+    row,
+    col,
+    enabled: Boolean(values.enabled),
+    pinNumber: String(values.pinNumber ?? ""),
+    pinName: String(values.pinName ?? ""),
+    pinNameSilkPosition: normalizeCellPinNameSilkPosition(values.pinNameSilkPosition ?? ""),
+    pinNameSilkFontSizeMm: clampPinNameSilkFontSizeOrZero(values.pinNameSilkFontSizeMm ?? 0),
+    pinNameSilkOffsetXMm: normalizeCellPinNameSilkOffset(values.pinNameSilkOffsetXMm),
+    pinNameSilkOffsetYMm: normalizeCellPinNameSilkOffset(values.pinNameSilkOffsetYMm)
+  };
+}
+
+function normalizeGridCells(cells, rows, cols) {
+  const cellMap = new Map(Array.isArray(cells)
+    ? cells.map((cell) => [keyFor(Number(cell.row), Number(cell.col)), cell])
+    : []);
+  return Array.from({ length: rows * cols }, (_, index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    return createGridCell(row, col, cellMap.get(keyFor(row, col)));
+  });
 }
 
 function createSymbolSidePins(source = {}) {
@@ -182,7 +222,14 @@ function syncInputsFromState() {
   dom.drill.value = state.drillMm;
   dom.silkWidth.value = state.silkWidthMm;
   dom.outline.checked = state.includeOutline;
-  dom.pinNameSilk.checked = state.includePinNameSilk;
+  dom.pinNameSilkPosition.value = state.pinNameSilkPosition;
+  dom.pinNameSilkFontSize.value = state.pinNameSilkFontSizeMm;
+  dom.pinNameSilkOffsetX.value = state.pinNameSilkOffsetXMm;
+  dom.pinNameSilkOffsetY.value = state.pinNameSilkOffsetYMm;
+  dom.bulkPinNameSilkPosition.value = state.pinNameSilkPosition === "none" ? "top" : state.pinNameSilkPosition;
+  dom.bulkPinNameSilkFontSize.value = state.pinNameSilkFontSizeMm;
+  dom.bulkPinNameSilkOffsetX.value = state.pinNameSilkOffsetXMm;
+  dom.bulkPinNameSilkOffsetY.value = state.pinNameSilkOffsetYMm;
   dom.outlineMargin.value = state.outlineMarginMm;
   dom.outlineCustomMargins.checked = Boolean(state.outlineCustomMargins);
   syncOutlineMarginInputs();
@@ -210,7 +257,11 @@ function readSettings() {
   state.drillMm = positiveNumber(dom.drill.value, 1.0);
   state.silkWidthMm = positiveNumber(dom.silkWidth.value, 0.15);
   state.includeOutline = dom.outline.checked;
-  state.includePinNameSilk = dom.pinNameSilk.checked;
+  state.pinNameSilkPosition = normalizePinNameSilkPosition(dom.pinNameSilkPosition.value, "none");
+  state.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(dom.pinNameSilkFontSize.value);
+  state.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(dom.pinNameSilkOffsetX.value);
+  state.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(dom.pinNameSilkOffsetY.value);
+  state.includePinNameSilk = state.pinNameSilkPosition !== "none";
   state.outlineMarginMm = nonNegativeNumber(dom.outlineMargin.value, 1.27);
   state.outlineCustomMargins = dom.outlineCustomMargins.checked;
   if (state.outlineCustomMargins && !wasOutlineCustomMargins) {
@@ -280,7 +331,7 @@ function resizeGridFromInputs() {
     const row = Math.floor(index / cols);
     const col = index % cols;
     const old = oldCells.get(keyFor(row, col));
-    return old ? { ...old } : { row, col, enabled: false, pinNumber: "", pinName: "" };
+    return createGridCell(row, col, old);
   });
   render();
 }
@@ -290,6 +341,140 @@ function getMinimumGridSizeForActiveCells() {
     rows: Math.max(minimum.rows, cell.row + 1),
     cols: Math.max(minimum.cols, cell.col + 1)
   }), { rows: 1, cols: 1 });
+}
+
+function adjustGridEdge(edge, action) {
+  readSettings();
+  if (!["top", "bottom", "left", "right"].includes(edge)) return;
+  if (!["add", "remove"].includes(action)) return;
+
+  const isRowEdge = edge === "top" || edge === "bottom";
+  const currentSize = isRowEdge ? state.rows : state.cols;
+  if (action === "add") {
+    if (currentSize >= 40) return;
+    rebuildGridFromEdge(edge, true);
+    return;
+  }
+
+  if (currentSize <= 1) return;
+  if (gridEdgeHasEnabledCell(edge)) return;
+  rebuildGridFromEdge(edge, false);
+}
+
+function gridEdgeHasEnabledCell(edge) {
+  return state.cells.some((cell) => {
+    if (!cell.enabled) return false;
+    if (edge === "top") return cell.row === 0;
+    if (edge === "bottom") return cell.row === state.rows - 1;
+    if (edge === "left") return cell.col === 0;
+    if (edge === "right") return cell.col === state.cols - 1;
+    return false;
+  });
+}
+
+function rebuildGridFromEdge(edge, isAdding) {
+  const oldRows = state.rows;
+  const oldCols = state.cols;
+  const newRows = oldRows + (edge === "top" || edge === "bottom" ? (isAdding ? 1 : -1) : 0);
+  const newCols = oldCols + (edge === "left" || edge === "right" ? (isAdding ? 1 : -1) : 0);
+  const oldCells = new Map(state.cells.map((cell) => [keyFor(cell.row, cell.col), cell]));
+  const currentSelection = selectedCell();
+  const pitchShift = getGridEdgePitchShift(edge, isAdding);
+
+  state.rows = newRows;
+  state.cols = newCols;
+  dom.rows.value = newRows;
+  dom.cols.value = newCols;
+  state.selectedKey = mapSelectedKeyAfterGridEdgeChange(currentSelection, edge, isAdding, newRows, newCols);
+  state.cells = Array.from({ length: newRows * newCols }, (_, index) => {
+    const row = Math.floor(index / newCols);
+    const col = index % newCols;
+    const oldRow = sourceRowForGridEdge(row, edge, isAdding);
+    const oldCol = sourceColForGridEdge(col, edge, isAdding);
+    const old = oldRow >= 0 && oldRow < oldRows && oldCol >= 0 && oldCol < oldCols
+      ? oldCells.get(keyFor(oldRow, oldCol))
+      : null;
+    return createGridCell(row, col, old);
+  });
+  if (pitchShift.x || pitchShift.y) shiftSilkscreen(pitchShift.x, pitchShift.y);
+  render();
+}
+
+function sourceRowForGridEdge(row, edge, isAdding) {
+  if (edge === "top") return isAdding ? row - 1 : row + 1;
+  return row;
+}
+
+function sourceColForGridEdge(col, edge, isAdding) {
+  if (edge === "left") return isAdding ? col - 1 : col + 1;
+  return col;
+}
+
+function mapSelectedKeyAfterGridEdgeChange(cell, edge, isAdding, rows, cols) {
+  if (!cell) return null;
+  let row = cell.row;
+  let col = cell.col;
+  if (isAdding) {
+    if (edge === "top") row += 1;
+    if (edge === "left") col += 1;
+  } else {
+    if (edge === "top") {
+      if (row === 0) return null;
+      row -= 1;
+    }
+    if (edge === "bottom" && row >= rows) return null;
+    if (edge === "left") {
+      if (col === 0) return null;
+      col -= 1;
+    }
+    if (edge === "right" && col >= cols) return null;
+  }
+  return row >= 0 && row < rows && col >= 0 && col < cols ? keyFor(row, col) : null;
+}
+
+function getGridEdgePitchShift(edge, isAdding) {
+  const amount = isAdding ? state.pitchMm : -state.pitchMm;
+  if (edge === "top") return { x: 0, y: amount };
+  if (edge === "left") return { x: amount, y: 0 };
+  return { x: 0, y: 0 };
+}
+
+function shiftSilkscreen(dxMm, dyMm) {
+  state.silkscreen = state.silkscreen.map((item) => {
+    if (item.type === "line") {
+      return {
+        ...item,
+        x1Mm: round(item.x1Mm + dxMm, 6),
+        y1Mm: round(item.y1Mm + dyMm, 6),
+        x2Mm: round(item.x2Mm + dxMm, 6),
+        y2Mm: round(item.y2Mm + dyMm, 6)
+      };
+    }
+    if (item.type === "rect") {
+      return {
+        ...item,
+        x1Mm: round(item.x1Mm + dxMm, 6),
+        y1Mm: round(item.y1Mm + dyMm, 6),
+        x2Mm: round(item.x2Mm + dxMm, 6),
+        y2Mm: round(item.y2Mm + dyMm, 6)
+      };
+    }
+    if (item.type === "text") {
+      return {
+        ...item,
+        xMm: round(item.xMm + dxMm, 6),
+        yMm: round(item.yMm + dyMm, 6)
+      };
+    }
+    return { ...item };
+  });
+  if (state.drawStart) {
+    state.drawStart = {
+      ...state.drawStart,
+      xMm: round(state.drawStart.xMm + dxMm, 6),
+      yMm: round(state.drawStart.yMm + dyMm, 6)
+    };
+  }
 }
 
 function clampInt(value, min, max) {
@@ -308,6 +493,58 @@ function clampIntOrZero(value, min, max) {
 function normalizeSymbolRows(value) {
   const rows = clampInt(value, 1, 4);
   return rows >= 4 ? 4 : rows >= 2 ? 2 : 1;
+}
+
+function normalizePinNameSilkPosition(value, fallback = "none") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return PIN_NAME_SILK_POSITIONS.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeCellPinNameSilkPosition(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return PIN_NAME_SILK_POSITIONS.includes(normalized) ? normalized : "";
+}
+
+function normalizePinNameSilkFontSize(value) {
+  return clampNumber(value, 0.4, 5);
+}
+
+function clampPinNameSilkFontSizeOrZero(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return normalizePinNameSilkFontSize(parsed);
+}
+
+function normalizePinNameSilkOffset(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? round(parsed, 3) : fallback;
+}
+
+function normalizeCellPinNameSilkOffset(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  return normalizePinNameSilkOffset(value);
+}
+
+function getCellPinNameSilkPosition(cell) {
+  return normalizePinNameSilkPosition(cell.pinNameSilkPosition || state.pinNameSilkPosition, state.pinNameSilkPosition);
+}
+
+function getCellPinNameSilkFontSize(cell) {
+  return cell.pinNameSilkFontSizeMm > 0
+    ? normalizePinNameSilkFontSize(cell.pinNameSilkFontSizeMm)
+    : normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm);
+}
+
+function getCellPinNameSilkOffsetX(cell) {
+  return cell.pinNameSilkOffsetXMm === null || cell.pinNameSilkOffsetXMm === undefined
+    ? normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm)
+    : normalizePinNameSilkOffset(cell.pinNameSilkOffsetXMm);
+}
+
+function getCellPinNameSilkOffsetY(cell) {
+  return cell.pinNameSilkOffsetYMm === null || cell.pinNameSilkOffsetYMm === undefined
+    ? normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm)
+    : normalizePinNameSilkOffset(cell.pinNameSilkOffsetYMm);
 }
 
 function render() {
@@ -426,6 +663,10 @@ function renderInspector() {
   dom.selectedCellTitle.textContent = `第 ${cell.row + 1} 行，第 ${cell.col + 1} 列`;
   dom.pinNumber.value = cell.pinNumber;
   dom.pinName.value = cell.pinName;
+  dom.cellPinNameSilkPosition.value = getCellPinNameSilkPosition(cell);
+  dom.cellPinNameSilkFontSize.value = getCellPinNameSilkFontSize(cell);
+  dom.cellPinNameSilkOffsetX.value = getCellPinNameSilkOffsetX(cell);
+  dom.cellPinNameSilkOffsetY.value = getCellPinNameSilkOffsetY(cell);
   dom.cellEnabled.checked = cell.enabled;
 }
 
@@ -587,13 +828,15 @@ function renderPcbPreview() {
     appendPcbSilkscreenItem(svg, model, item);
   }
 
-  if (model.includePinNameSilk) {
-    for (const pad of model.pads) {
-      const point = padToFootprintPoint(model, pad, 0.35, -0.95);
+  for (const pad of model.pads) {
+    const pinText = getPinNameSilkPlacement(model, pad);
+    if (pinText) {
       const text = svgEl("text", {
         class: "pcb-pin-name",
-        x: point.x,
-        y: point.y
+        x: pinText.x,
+        y: pinText.y,
+        "font-size": pinText.size,
+        "text-anchor": pinText.anchor
       });
       text.textContent = pad.name;
       svg.appendChild(text);
@@ -675,10 +918,8 @@ function getPcbPreviewBounds(model) {
     const point = padToFootprintPoint(model, pad);
     include(point.x - padRadius, point.y - padRadius);
     include(point.x + padRadius, point.y + padRadius);
-    if (model.includePinNameSilk) {
-      const namePoint = padToFootprintPoint(model, pad, 0.35, -0.95);
-      include(namePoint.x, namePoint.y);
-    }
+    const pinText = getPinNameSilkPlacement(model, pad);
+    if (pinText) includeTextBounds(include, pad.name, pinText);
   }
 
   if (model.includeOutline) {
@@ -727,6 +968,62 @@ function getPartNameTextPlacement(model) {
     size,
     thickness: round(Math.max(0.1, size * 0.15), 3)
   };
+}
+
+function getPinNameSilkPlacement(model, pad) {
+  const position = normalizePinNameSilkPosition(pad.pinNameSilkPosition, "none");
+  if (position === "none") return null;
+
+  const center = padToFootprintPoint(model, pad);
+  const size = normalizePinNameSilkFontSize(pad.pinNameSilkFontSizeMm || model.pinNameSilkFontSizeMm || 0.8);
+  const gap = Math.max(0.2, model.silkWidthMm * 2);
+  const verticalOffset = model.padMm / 2 + gap + size * 0.45;
+  const horizontalOffset = model.padMm / 2 + gap;
+  const placement = {
+    x: center.x,
+    y: center.y,
+    size,
+    thickness: round(Math.max(0.1, size * 0.15), 3),
+    anchor: "middle",
+    justify: ""
+  };
+
+  if (position === "top") {
+    placement.y = round(center.y - verticalOffset, 3);
+  }
+  if (position === "bottom") {
+    placement.y = round(center.y + verticalOffset, 3);
+  }
+  if (position === "left") {
+    placement.x = round(center.x - horizontalOffset, 3);
+    placement.anchor = "end";
+    placement.justify = "right";
+  }
+  if (position === "right") {
+    placement.x = round(center.x + horizontalOffset, 3);
+    placement.anchor = "start";
+    placement.justify = "left";
+  }
+  placement.x = round(placement.x + normalizePinNameSilkOffset(pad.pinNameSilkOffsetXMm ?? model.pinNameSilkOffsetXMm), 3);
+  placement.y = round(placement.y + normalizePinNameSilkOffset(pad.pinNameSilkOffsetYMm ?? model.pinNameSilkOffsetYMm), 3);
+  return placement;
+}
+
+function includeTextBounds(include, text, placement) {
+  const width = Math.max(placement.size, String(text).length * placement.size * 0.65);
+  const height = placement.size;
+  let left = placement.x - width / 2;
+  let right = placement.x + width / 2;
+  if (placement.anchor === "start") {
+    left = placement.x;
+    right = placement.x + width;
+  }
+  if (placement.anchor === "end") {
+    left = placement.x - width;
+    right = placement.x;
+  }
+  include(left, placement.y - height / 2);
+  include(right, placement.y + height / 2);
 }
 
 function getPreviewPinPoints(layout, pin) {
@@ -1028,9 +1325,14 @@ function buildModel() {
       row: cell.row,
       col: cell.col,
       number,
-      name: sanitizeField(cell.pinName || `PIN_${number}`)
+      name: sanitizeField(cell.pinName || `PIN_${number}`),
+      pinNameSilkPosition: getCellPinNameSilkPosition(cell),
+      pinNameSilkFontSizeMm: getCellPinNameSilkFontSize(cell),
+      pinNameSilkOffsetXMm: getCellPinNameSilkOffsetX(cell),
+      pinNameSilkOffsetYMm: getCellPinNameSilkOffsetY(cell)
     };
   });
+  const includePinNameSilk = pads.some((pad) => pad.pinNameSilkPosition !== "none");
 
   return {
     name: state.partName,
@@ -1041,8 +1343,12 @@ function buildModel() {
     drillMm: state.drillMm,
     silkWidthMm: state.silkWidthMm,
     nameSilkFontSizeMm: state.nameSilkFontSizeMm,
+    pinNameSilkFontSizeMm: state.pinNameSilkFontSizeMm,
+    pinNameSilkOffsetXMm: state.pinNameSilkOffsetXMm,
+    pinNameSilkOffsetYMm: state.pinNameSilkOffsetYMm,
     includeOutline: state.includeOutline,
-    includePinNameSilk: state.includePinNameSilk,
+    includePinNameSilk,
+    pinNameSilkPosition: state.pinNameSilkPosition,
     outlineMarginMm: state.outlineMarginMm,
     outlineCustomMargins: state.outlineCustomMargins,
     outlineMargins: createOutlineMargins(state.outlineMargins, state.outlineMarginMm),
@@ -1093,6 +1399,9 @@ function setAllCells(enabled) {
 }
 
 function autoNumberPins() {
+  state.cells.forEach((cell) => {
+    if (!cell.enabled) cell.pinNumber = "";
+  });
   getActiveCells().forEach((cell, index) => {
     cell.pinNumber = String(index + 1);
   });
@@ -1104,6 +1413,72 @@ function clearNames() {
     cell.pinName = "";
   });
   render();
+}
+
+function useSelectedPinAsBulkTemplate() {
+  readSettings();
+  const cell = selectedCell();
+  if (!cell || !cell.enabled) {
+    alert("请先选择一个已启用的引脚作为模版。");
+    return;
+  }
+
+  dom.bulkPinNameSilkPosition.value = getCellPinNameSilkPosition(cell);
+  dom.bulkPinNameSilkFontSize.value = getCellPinNameSilkFontSize(cell);
+  dom.bulkPinNameSilkOffsetX.value = getCellPinNameSilkOffsetX(cell);
+  dom.bulkPinNameSilkOffsetY.value = getCellPinNameSilkOffsetY(cell);
+}
+
+function applyBulkPinNameSilkStyle() {
+  readSettings();
+  const targets = parsePinSelector(dom.bulkPinStylePins.value);
+  if (!targets.size) {
+    alert("请填写要设置的引脚编号，例如 1,2,5-8。");
+    return;
+  }
+
+  const position = normalizePinNameSilkPosition(dom.bulkPinNameSilkPosition.value, "none");
+  const fontSize = normalizePinNameSilkFontSize(dom.bulkPinNameSilkFontSize.value);
+  const offsetX = normalizePinNameSilkOffset(dom.bulkPinNameSilkOffsetX.value);
+  const offsetY = normalizePinNameSilkOffset(dom.bulkPinNameSilkOffsetY.value);
+  let changed = 0;
+  for (const cell of getActiveCells()) {
+    const pinNumber = String(cell.pinNumber).trim();
+    if (!pinNumber || !targets.has(pinNumber)) continue;
+    cell.pinNameSilkPosition = position;
+    cell.pinNameSilkFontSizeMm = fontSize;
+    cell.pinNameSilkOffsetXMm = offsetX;
+    cell.pinNameSilkOffsetYMm = offsetY;
+    changed += 1;
+  }
+
+  if (!changed) {
+    alert("没有匹配到已启用的引脚编号。");
+    return;
+  }
+  render();
+}
+
+function parsePinSelector(value) {
+  const pins = new Set();
+  String(value)
+    .split(/[\s,;，；]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .forEach((token) => {
+      const range = token.match(/^(\d+)\s*[-~]\s*(\d+)$/);
+      if (range) {
+        const start = Number(range[1]);
+        const end = Number(range[2]);
+        const step = start <= end ? 1 : -1;
+        for (let pin = start; step > 0 ? pin <= end : pin >= end; pin += step) {
+          pins.add(String(pin));
+        }
+        return;
+      }
+      pins.add(token);
+    });
+  return pins;
 }
 
 function addSilkscreenPoint(point) {
@@ -1247,10 +1622,11 @@ function generateEasyEdaPcbShapes(model, startId = 1) {
     addEasyEdaRectTrack(shapes, model, -margins.left, -margins.top, (model.cols - 1) * model.pitchMm + margins.right, (model.rows - 1) * model.pitchMm + margins.bottom, silkWidth, nextId());
   }
 
-  if (model.includePinNameSilk) {
-    for (const pad of model.pads) {
-      const base = footprintPoint(model, pad.col * model.pitchMm + 0.35, pad.row * model.pitchMm - 0.95);
-      shapes.push(`TEXT~L~${base.x}~${base.y}~0.6~0~none~3~~4~${sanitizeField(pad.name)}~~~${nextId()}`);
+  for (const pad of model.pads) {
+    const pinText = getPinNameSilkPlacement(model, pad);
+    if (pinText) {
+      const base = footprintPoint(model, pinText.x + getFootprintMetrics(model).halfW, pinText.y + getFootprintMetrics(model).halfH);
+      shapes.push(`TEXT~L~${base.x}~${base.y}~${round(pinText.size, 3)}~0~none~3~~4~${sanitizeField(pad.name)}~~~${nextId()}`);
     }
   }
 
@@ -1650,6 +2026,12 @@ function generateKicadFootprint(model) {
     }
   }
   for (const pad of model.pads) {
+    const pinText = getPinNameSilkPlacement(model, pad);
+    if (!pinText) continue;
+    const justify = pinText.justify ? ` (justify ${pinText.justify})` : "";
+    lines.push(`  (fp_text user "${escapeKicad(pad.name)}" (at ${pinText.x} ${pinText.y} 0) (layer "F.SilkS") (effects (font (size ${round(pinText.size, 3)} ${round(pinText.size, 3)}) (thickness ${pinText.thickness}))${justify}))`);
+  }
+  for (const pad of model.pads) {
     const x = pad.col * model.pitchMm - halfW;
     const y = pad.row * model.pitchMm - halfH;
     lines.push(`  (pad "${escapeKicad(pad.number)}" thru_hole circle (at ${round(x, 3)} ${round(y, 3)}) (size ${round(model.padMm, 3)} ${round(model.padMm, 3)}) (drill ${round(model.drillMm, 3)}) (layers "*.Cu" "*.Mask"))`);
@@ -1864,7 +2246,7 @@ const CRC32_TABLE = (() => {
 function createProjectPayload() {
   readSettings();
   return {
-    version: 3,
+    version: 5,
     ...state,
     drawStart: null,
     mode: "select"
@@ -1878,6 +2260,7 @@ function saveProject() {
 
 function applyProjectPayload(payload) {
   if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
+  const hasPinNameSilkPosition = Object.prototype.hasOwnProperty.call(payload, "pinNameSilkPosition");
   state = {
     ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
     ...payload,
@@ -1894,12 +2277,21 @@ function applyProjectPayload(payload) {
     ? createOutlineMargins(state.outlineMargins, state.outlineMarginMm)
     : createOutlineMargins({}, state.outlineMarginMm);
   state.nameSilkFontSizeMm = positiveNumber(state.nameSilkFontSizeMm, 1);
+  state.pinNameSilkPosition = normalizePinNameSilkPosition(
+    hasPinNameSilkPosition ? state.pinNameSilkPosition : (state.includePinNameSilk ? "top" : "none"),
+    "none"
+  );
+  state.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm || 0.8);
+  state.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm);
+  state.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm);
+  state.includePinNameSilk = state.pinNameSilkPosition !== "none";
   state.symbolRows = normalizeSymbolRows(state.symbolRows || 2);
   state.symbolPinsPerRow = clampIntOrZero(state.symbolPinsPerRow, 1, 200);
   state.symbolMirror = Boolean(state.symbolMirror);
   state.symbolFlip = Boolean(state.symbolFlip);
   state.symbolSidePins = createSymbolSidePins(state.symbolSidePins);
   state.layoutColumns = createLayoutColumns(state.layoutColumns);
+  state.cells = normalizeGridCells(state.cells, state.rows, state.cols);
   syncInputsFromState();
   render();
 }
@@ -2090,6 +2482,12 @@ dom.columnResizers.forEach((resizer) => {
   resizer.addEventListener("pointerdown", beginColumnResize);
 });
 
+dom.gridAdjustButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    adjustGridEdge(button.dataset.gridEdge, button.dataset.gridAction);
+  });
+});
+
 [
   dom.rows,
   dom.cols
@@ -2102,6 +2500,8 @@ dom.enableAll.addEventListener("click", () => setAllCells(true));
 dom.disableAll.addEventListener("click", () => setAllCells(false));
 dom.autoNumber.addEventListener("click", autoNumberPins);
 dom.clearNames.addEventListener("click", clearNames);
+dom.useSelectedPinStyle.addEventListener("click", useSelectedPinAsBulkTemplate);
+dom.applyPinStyle.addEventListener("click", applyBulkPinNameSilkStyle);
 dom.saveProject.addEventListener("click", saveProject);
 dom.projectFile.addEventListener("change", (event) => loadProject(event.target.files[0]));
 
@@ -2156,6 +2556,38 @@ dom.pinName.addEventListener("input", () => {
   scheduleProjectCacheSave();
 });
 
+dom.cellPinNameSilkPosition.addEventListener("change", () => {
+  const cell = selectedCell();
+  if (!cell) return;
+  cell.pinNameSilkPosition = normalizePinNameSilkPosition(dom.cellPinNameSilkPosition.value, state.pinNameSilkPosition);
+  renderPcbPreview();
+  scheduleProjectCacheSave();
+});
+
+dom.cellPinNameSilkFontSize.addEventListener("input", () => {
+  const cell = selectedCell();
+  if (!cell) return;
+  cell.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(dom.cellPinNameSilkFontSize.value);
+  renderPcbPreview();
+  scheduleProjectCacheSave();
+});
+
+dom.cellPinNameSilkOffsetX.addEventListener("input", () => {
+  const cell = selectedCell();
+  if (!cell) return;
+  cell.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(dom.cellPinNameSilkOffsetX.value);
+  renderPcbPreview();
+  scheduleProjectCacheSave();
+});
+
+dom.cellPinNameSilkOffsetY.addEventListener("input", () => {
+  const cell = selectedCell();
+  if (!cell) return;
+  cell.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(dom.cellPinNameSilkOffsetY.value);
+  renderPcbPreview();
+  scheduleProjectCacheSave();
+});
+
 dom.cellEnabled.addEventListener("change", () => {
   const cell = selectedCell();
   if (!cell) return;
@@ -2172,7 +2604,10 @@ dom.cellEnabled.addEventListener("change", () => {
   dom.drill,
   dom.silkWidth,
   dom.outline,
-  dom.pinNameSilk,
+  dom.pinNameSilkPosition,
+  dom.pinNameSilkFontSize,
+  dom.pinNameSilkOffsetX,
+  dom.pinNameSilkOffsetY,
   dom.outlineMargin,
   dom.outlineCustomMargins,
   ...Object.values(dom.outlineMargins),
