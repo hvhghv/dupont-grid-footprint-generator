@@ -2258,9 +2258,25 @@ function saveProject() {
   downloadText(`${state.partName}.dupont-grid-project.json`, JSON.stringify(payload, null, 2), "application/json");
 }
 
+function inferImportedPinNameSilkPosition(payload) {
+  if (Object.prototype.hasOwnProperty.call(payload, "pinNameSilkPosition")) {
+    return normalizePinNameSilkPosition(payload.pinNameSilkPosition, "none");
+  }
+
+  if (payload.includePinNameSilk) return "top";
+
+  const legacyHasNamedPins = Array.isArray(payload.cells)
+    && payload.cells.some((cell) => Boolean(cell?.enabled) && String(cell?.pinName ?? "").trim());
+
+  if ((payload.version ?? 0) < 5 && legacyHasNamedPins) {
+    return "top";
+  }
+
+  return "none";
+}
+
 function applyProjectPayload(payload) {
   if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
-  const hasPinNameSilkPosition = Object.prototype.hasOwnProperty.call(payload, "pinNameSilkPosition");
   state = {
     ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
     ...payload,
@@ -2277,10 +2293,7 @@ function applyProjectPayload(payload) {
     ? createOutlineMargins(state.outlineMargins, state.outlineMarginMm)
     : createOutlineMargins({}, state.outlineMarginMm);
   state.nameSilkFontSizeMm = positiveNumber(state.nameSilkFontSizeMm, 1);
-  state.pinNameSilkPosition = normalizePinNameSilkPosition(
-    hasPinNameSilkPosition ? state.pinNameSilkPosition : (state.includePinNameSilk ? "top" : "none"),
-    "none"
-  );
+  state.pinNameSilkPosition = inferImportedPinNameSilkPosition(payload);
   state.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm || 0.8);
   state.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm);
   state.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm);
