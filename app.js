@@ -25,6 +25,50 @@ const CACHE_CHUNK_SIZE = 3500;
 const DEFAULT_LAYOUT_COLUMNS = { left: 300, center: 0, right: 300 };
 const MIN_LAYOUT_COLUMNS = { left: 240, center: 420, right: 260 };
 const PIN_NAME_SILK_POSITIONS = ["none", "top", "bottom", "left", "right"];
+const EASYEDA_SILK_FONT = {
+  " ": ["000", "000", "000", "000", "000"],
+  "+": ["000", "010", "111", "010", "000"],
+  "-": ["000", "000", "111", "000", "000"],
+  ".": ["000", "000", "000", "000", "010"],
+  "/": ["001", "001", "010", "100", "100"],
+  "_": ["000", "000", "000", "000", "111"],
+  "0": ["111", "101", "101", "101", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "2": ["111", "001", "111", "100", "111"],
+  "3": ["111", "001", "111", "001", "111"],
+  "4": ["101", "101", "111", "001", "001"],
+  "5": ["111", "100", "111", "001", "111"],
+  "6": ["111", "100", "111", "101", "111"],
+  "7": ["111", "001", "001", "001", "001"],
+  "8": ["111", "101", "111", "101", "111"],
+  "9": ["111", "101", "111", "001", "111"],
+  "A": ["111", "101", "111", "101", "101"],
+  "B": ["110", "101", "110", "101", "110"],
+  "C": ["111", "100", "100", "100", "111"],
+  "D": ["110", "101", "101", "101", "110"],
+  "E": ["111", "100", "110", "100", "111"],
+  "F": ["111", "100", "110", "100", "100"],
+  "G": ["111", "100", "101", "101", "111"],
+  "H": ["101", "101", "111", "101", "101"],
+  "I": ["111", "010", "010", "010", "111"],
+  "J": ["001", "001", "001", "101", "111"],
+  "K": ["101", "101", "110", "101", "101"],
+  "L": ["100", "100", "100", "100", "111"],
+  "M": ["101", "111", "111", "101", "101"],
+  "N": ["101", "111", "111", "111", "101"],
+  "O": ["111", "101", "101", "101", "111"],
+  "P": ["111", "101", "111", "100", "100"],
+  "Q": ["111", "101", "101", "111", "001"],
+  "R": ["110", "101", "110", "101", "101"],
+  "S": ["111", "100", "111", "001", "111"],
+  "T": ["111", "010", "010", "010", "010"],
+  "U": ["101", "101", "101", "101", "111"],
+  "V": ["101", "101", "101", "101", "010"],
+  "W": ["101", "101", "111", "111", "101"],
+  "X": ["101", "101", "010", "101", "101"],
+  "Y": ["101", "101", "010", "010", "010"],
+  "Z": ["111", "001", "010", "100", "111"]
+};
 
 let state = createState(3, 8);
 let cacheSaveTimer = null;
@@ -970,6 +1014,59 @@ function getPartNameTextPlacement(model) {
   };
 }
 
+function getEasyEdaSilkGlyph(char) {
+  const normalized = String(char || "");
+  return EASYEDA_SILK_FONT[normalized]
+    || EASYEDA_SILK_FONT[normalized.toUpperCase()]
+    || EASYEDA_SILK_FONT[" "];
+}
+
+function appendEasyEdaSilkTextTracks(shapes, model, text, placement, nextId) {
+  const value = String(text ?? "").trim();
+  if (!value) return;
+
+  const glyphHeight = Math.max(0.4, Number(placement?.size) || 0.8);
+  const pixel = glyphHeight / 5;
+  const glyphWidth = pixel * 3;
+  const glyphAdvance = pixel * 4;
+  const totalWidth = value.length > 0 ? glyphAdvance * value.length - pixel : 0;
+  const anchor = placement?.anchor || "start";
+  const strokeMm = Math.max(0.1, Number(placement?.thickness) || pixel * 0.8);
+  const trackWidth = Math.max(0.1, mmToEe(strokeMm));
+  const metrics = getFootprintMetrics(model);
+  const startX = anchor === "middle"
+    ? placement.x - totalWidth / 2
+    : anchor === "end"
+      ? placement.x - totalWidth
+      : placement.x;
+  const topY = placement.y - glyphHeight / 2;
+
+  for (let charIndex = 0; charIndex < value.length; charIndex += 1) {
+    const glyph = getEasyEdaSilkGlyph(value[charIndex]);
+    const glyphX = startX + charIndex * glyphAdvance;
+    for (let row = 0; row < glyph.length; row += 1) {
+      const rowPattern = glyph[row];
+      let runStart = -1;
+      for (let col = 0; col <= rowPattern.length; col += 1) {
+        const filled = rowPattern[col] === "1";
+        if (filled) {
+          if (runStart < 0) runStart = col;
+          continue;
+        }
+        if (runStart < 0) continue;
+
+        const x1Mm = glyphX + runStart * pixel + pixel * 0.2;
+        const x2Mm = glyphX + col * pixel - pixel * 0.2;
+        const yMm = topY + row * pixel + pixel / 2;
+        const p1 = footprintPoint(model, x1Mm + metrics.halfW, yMm + metrics.halfH);
+        const p2 = footprintPoint(model, x2Mm + metrics.halfW, yMm + metrics.halfH);
+        shapes.push(`TRACK~${trackWidth}~3~~${p1.x} ${p1.y} ${p2.x} ${p2.y}~${nextId()}`);
+        runStart = -1;
+      }
+    }
+  }
+}
+
 function getPinNameSilkPlacement(model, pad) {
   const position = normalizePinNameSilkPosition(pad.pinNameSilkPosition, "none");
   if (position === "none") return null;
@@ -1622,11 +1719,15 @@ function generateEasyEdaPcbShapes(model, startId = 1) {
     addEasyEdaRectTrack(shapes, model, -margins.left, -margins.top, (model.cols - 1) * model.pitchMm + margins.right, (model.rows - 1) * model.pitchMm + margins.bottom, silkWidth, nextId());
   }
 
+  appendEasyEdaSilkTextTracks(shapes, model, model.name, {
+    ...getPartNameTextPlacement(model),
+    anchor: "middle"
+  }, nextId);
+
   for (const pad of model.pads) {
     const pinText = getPinNameSilkPlacement(model, pad);
     if (pinText) {
-      const base = footprintPoint(model, pinText.x + getFootprintMetrics(model).halfW, pinText.y + getFootprintMetrics(model).halfH);
-      shapes.push(`TEXT~L~${base.x}~${base.y}~${round(pinText.size, 3)}~0~none~3~~4~${sanitizeField(pad.name)}~~~${nextId()}`);
+      appendEasyEdaSilkTextTracks(shapes, model, pad.name, pinText, nextId);
     }
   }
 
@@ -1640,8 +1741,14 @@ function generateEasyEdaPcbShapes(model, startId = 1) {
       addEasyEdaRectTrack(shapes, model, item.x1Mm, item.y1Mm, item.x2Mm, item.y2Mm, silkWidth, nextId());
     }
     if (item.type === "text") {
-      const point = footprintPoint(model, item.xMm, item.yMm);
-      shapes.push(`TEXT~L~${point.x}~${point.y}~0.8~0~none~3~~6~${sanitizeField(item.value)}~~~${nextId()}`);
+      const localPoint = footprintLocalPoint(model, item.xMm, item.yMm);
+      appendEasyEdaSilkTextTracks(shapes, model, item.value, {
+        x: localPoint.x,
+        y: localPoint.y,
+        size: 0.8,
+        thickness: 0.15,
+        anchor: "start"
+      }, nextId);
     }
   }
 
