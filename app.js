@@ -1025,13 +1025,12 @@ function appendEasyEdaSilkTextTracks(shapes, model, text, placement, nextId) {
   const value = String(text ?? "").trim();
   if (!value) return;
 
-  const glyphHeight = Math.max(0.4, Number(placement?.size) || 0.8);
+  const glyphHeight = Math.max(1.2, (Number(placement?.size) || 0.8) * 1.8);
   const pixel = glyphHeight / 5;
-  const glyphWidth = pixel * 3;
   const glyphAdvance = pixel * 4;
   const totalWidth = value.length > 0 ? glyphAdvance * value.length - pixel : 0;
   const anchor = placement?.anchor || "start";
-  const strokeMm = Math.max(0.1, Number(placement?.thickness) || pixel * 0.8);
+  const strokeMm = Math.max(0.18, (Number(placement?.thickness) || pixel * 0.8) * 1.4);
   const trackWidth = Math.max(0.1, mmToEe(strokeMm));
   const metrics = getFootprintMetrics(model);
   const startX = anchor === "middle"
@@ -2382,8 +2381,24 @@ function inferImportedPinNameSilkPosition(payload) {
   return "none";
 }
 
+function migrateLegacyCellPinNameSilkPosition(cells, fallbackPosition) {
+  if (!Array.isArray(cells) || fallbackPosition === "none") return cells;
+  cells.forEach((cell) => {
+    if (!cell || Object.prototype.hasOwnProperty.call(cell, "pinNameSilkPosition")) return;
+    if (Boolean(cell.enabled) && String(cell.pinName ?? "").trim()) {
+      cell.pinNameSilkPosition = fallbackPosition;
+    }
+  });
+  return cells;
+}
+
 function applyProjectPayload(payload) {
   if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
+  const importedPinNameSilkPosition = inferImportedPinNameSilkPosition(payload);
+  const importedCells = migrateLegacyCellPinNameSilkPosition(
+    Array.isArray(payload.cells) ? payload.cells.map((cell) => ({ ...cell })) : [],
+    importedPinNameSilkPosition
+  );
   state = {
     ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
     ...payload,
@@ -2392,7 +2407,8 @@ function applyProjectPayload(payload) {
     mode: "select",
     drawStart: null,
     selectedKey: null,
-    silkscreen: Array.isArray(payload.silkscreen) ? payload.silkscreen : []
+    silkscreen: Array.isArray(payload.silkscreen) ? payload.silkscreen : [],
+    cells: importedCells
   };
   state.outlineMarginMm = nonNegativeNumber(state.outlineMarginMm, 1.27);
   state.outlineCustomMargins = Boolean(state.outlineCustomMargins);
@@ -2400,7 +2416,7 @@ function applyProjectPayload(payload) {
     ? createOutlineMargins(state.outlineMargins, state.outlineMarginMm)
     : createOutlineMargins({}, state.outlineMarginMm);
   state.nameSilkFontSizeMm = positiveNumber(state.nameSilkFontSizeMm, 1);
-  state.pinNameSilkPosition = inferImportedPinNameSilkPosition(payload);
+  state.pinNameSilkPosition = importedPinNameSilkPosition;
   state.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm || 0.8);
   state.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm);
   state.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm);
