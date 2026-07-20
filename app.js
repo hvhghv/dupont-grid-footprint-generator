@@ -146,8 +146,8 @@ const dom = {
   pcbPreview: document.querySelector("#pcbPreview"),
   projectStatus: document.querySelector("#projectStatus"),
   downloadKicadZip: document.querySelector("#downloadKicadZip"),
-  downloadKicadMod: document.querySelector("#downloadKicadMod"),
-  downloadKicadSym: document.querySelector("#downloadKicadSym")
+  downloadKicadPcb: document.querySelector("#downloadKicadPcb"),
+  downloadKicadSch: document.querySelector("#downloadKicadSch")
 };
 
 function createState(rows, cols) {
@@ -2150,7 +2150,7 @@ function kicadLine(x1, y1, x2, y2, width) {
   return `  (fp_line (start ${round(x1, 3)} ${round(y1, 3)}) (end ${round(x2, 3)} ${round(y2, 3)}) (stroke (width ${round(width, 3)}) (type solid)) (layer "F.SilkS"))`;
 }
 
-function generateKicadSymbol(model) {
+function buildKicadSymbolDefinitionLines(model, indent = "") {
   const layout = buildSymbolLayout(model);
   const bodyHalfH = layout.bodyHalfH;
   const bodyHalfW = layout.bodyHalfW;
@@ -2159,33 +2159,196 @@ function generateKicadSymbol(model) {
   const commonUnitName = escapeKicad(`${model.name}_0_1`);
   const pinUnitName = escapeKicad(`${model.name}_1_1`);
   const lines = [];
+  lines.push(`${indent}(symbol "${symbolName}"`);
+  lines.push(`${indent}  (pin_names (offset 1.016))`);
+  lines.push(`${indent}  (exclude_from_sim no)`);
+  lines.push(`${indent}  (in_bom yes)`);
+  lines.push(`${indent}  (on_board yes)`);
+  lines.push(`${indent}  (property "Reference" "J" (id 0) (at 0 ${round(-bodyHalfH - 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
+  lines.push(`${indent}  (property "Value" "${symbolName}" (id 1) (at 0 ${round(bodyHalfH + 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
+  lines.push(`${indent}  (property "Footprint" "" (id 2) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
+  lines.push(`${indent}  (property "Datasheet" "" (id 3) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
+  lines.push(`${indent}  (symbol "${commonUnitName}"`);
+  lines.push(`${indent}    (rectangle (start ${-bodyHalfW} ${round(bodyHalfH, 3)}) (end ${bodyHalfW} ${round(-bodyHalfH, 3)}) (stroke (width 0.254) (type default) (color 0 0 0 0)) (fill (type none)))`);
+  lines.push(`${indent}  )`);
+  lines.push(`${indent}  (symbol "${pinUnitName}"`);
+  layout.pins.forEach((entry) => {
+    lines.push(`${indent}    (pin passive line (at ${round(entry.x, 3)} ${entry.y} ${entry.angle}) (length ${layout.pinLength}) (name "${escapeKicad(entry.pin.name)}" (effects (font (size 1.27 1.27)))) (number "${escapeKicad(entry.pin.number)}" (effects (font (size 1.27 1.27)))))`);
+  });
+  lines.push(`${indent}  )`);
+  lines.push(`${indent})`);
+  return lines;
+}
+
+function generateKicadSymbol(model) {
+  const lines = [];
   lines.push("(kicad_symbol_lib");
   lines.push("  (version 20211014)");
   lines.push("  (generator \"dupont-grid-local-web\")");
-  lines.push(`  (symbol "${symbolName}"`);
-  lines.push("    (pin_names (offset 1.016))");
-  lines.push("    (exclude_from_sim no)");
-  lines.push("    (in_bom yes)");
-  lines.push("    (on_board yes)");
-  lines.push(`    (property "Reference" "J" (id 0) (at 0 ${round(-bodyHalfH - 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
-  lines.push(`    (property "Value" "${symbolName}" (id 1) (at 0 ${round(bodyHalfH + 1.27, 3)} 0) (effects (font (size ${propertyFontSize} ${propertyFontSize}))))`);
-  lines.push(`    (property "Footprint" "" (id 2) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
-  lines.push(`    (property "Datasheet" "" (id 3) (at 0 0 0) (effects (font (size ${propertyFontSize} ${propertyFontSize})) hide))`);
-  lines.push(`    (symbol "${commonUnitName}"`);
-  lines.push(`      (rectangle (start ${-bodyHalfW} ${round(bodyHalfH, 3)}) (end ${bodyHalfW} ${round(-bodyHalfH, 3)}) (stroke (width 0.254) (type default) (color 0 0 0 0)) (fill (type none)))`);
+  lines.push(...buildKicadSymbolDefinitionLines(model, "  "));
+  lines.push(")");
+  return `${lines.join("\n")}\n`;
+}
+
+function buildKicadEmbeddedFootprintLines(model, indent = "", reference = "J1", atX = 0, atY = 0) {
+  const lines = [];
+  const metrics = getFootprintMetrics(model);
+  const { halfW, halfH, leftX, rightX, topY, bottomY } = metrics;
+  const partNameText = getPartNameTextPlacement(model);
+  lines.push(`${indent}(footprint "${escapeKicad(model.name)}:${escapeKicad(model.name)}"`);
+  lines.push(`${indent}  (layer "F.Cu")`);
+  lines.push(`${indent}  (at ${round(atX, 3)} ${round(atY, 3)} 0)`);
+  lines.push(`${indent}  (descr "Generated Dupont female header grid")`);
+  lines.push(`${indent}  (attr through_hole)`);
+  lines.push(`${indent}  (fp_text reference "${escapeKicad(reference)}" (at 0 ${round(topY - 1.5, 3)} 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))`);
+  lines.push(`${indent}  (fp_text value "${escapeKicad(model.name)}" (at ${partNameText.x} ${partNameText.y} 0) (layer "F.Fab") (effects (font (size ${round(partNameText.size, 3)} ${round(partNameText.size, 3)}) (thickness ${partNameText.thickness}))))`);
+  if (model.includeOutline) {
+    lines.push(`${indent}${kicadLine(leftX, topY, rightX, topY, model.silkWidthMm).trimStart()}`);
+    lines.push(`${indent}${kicadLine(rightX, topY, rightX, bottomY, model.silkWidthMm).trimStart()}`);
+    lines.push(`${indent}${kicadLine(rightX, bottomY, leftX, bottomY, model.silkWidthMm).trimStart()}`);
+    lines.push(`${indent}${kicadLine(leftX, bottomY, leftX, topY, model.silkWidthMm).trimStart()}`);
+  }
+  for (const item of model.silkscreen) {
+    if (item.type === "line") lines.push(`${indent}${kicadLine(item.x1Mm - halfW, item.y1Mm - halfH, item.x2Mm - halfW, item.y2Mm - halfH, model.silkWidthMm).trimStart()}`);
+    if (item.type === "rect") {
+      const x1 = Math.min(item.x1Mm, item.x2Mm) - halfW;
+      const y1 = Math.min(item.y1Mm, item.y2Mm) - halfH;
+      const x2 = Math.max(item.x1Mm, item.x2Mm) - halfW;
+      const y2 = Math.max(item.y1Mm, item.y2Mm) - halfH;
+      lines.push(`${indent}${kicadLine(x1, y1, x2, y1, model.silkWidthMm).trimStart()}`);
+      lines.push(`${indent}${kicadLine(x2, y1, x2, y2, model.silkWidthMm).trimStart()}`);
+      lines.push(`${indent}${kicadLine(x2, y2, x1, y2, model.silkWidthMm).trimStart()}`);
+      lines.push(`${indent}${kicadLine(x1, y2, x1, y1, model.silkWidthMm).trimStart()}`);
+    }
+    if (item.type === "text") {
+      lines.push(`${indent}  (fp_text user "${escapeKicad(item.value)}" (at ${round(item.xMm - halfW, 3)} ${round(item.yMm - halfH, 3)} 0) (layer "F.SilkS") (effects (font (size 1 1) (thickness 0.15))))`);
+    }
+  }
+  for (const pad of model.pads) {
+    const pinText = getPinNameSilkPlacement(model, pad);
+    if (!pinText) continue;
+    const justify = pinText.justify ? ` (justify ${pinText.justify})` : "";
+    lines.push(`${indent}  (fp_text user "${escapeKicad(pad.name)}" (at ${pinText.x} ${pinText.y} 0) (layer "F.SilkS") (effects (font (size ${round(pinText.size, 3)} ${round(pinText.size, 3)}) (thickness ${pinText.thickness}))${justify}))`);
+  }
+  for (const pad of model.pads) {
+    const x = pad.col * model.pitchMm - halfW;
+    const y = pad.row * model.pitchMm - halfH;
+    lines.push(`${indent}  (pad "${escapeKicad(pad.number)}" thru_hole circle (at ${round(x, 3)} ${round(y, 3)}) (size ${round(model.padMm, 3)} ${round(model.padMm, 3)}) (drill ${round(model.drillMm, 3)}) (layers "*.Cu" "*.Mask"))`);
+  }
+  lines.push(`${indent})`);
+  return lines;
+}
+
+function escapeKicad(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
+function createKicadUuid(seed) {
+  let hash1 = 0x811c9dc5;
+  let hash2 = 0x01000193;
+  const text = String(seed);
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    hash1 ^= code;
+    hash1 = Math.imul(hash1, 0x01000193) >>> 0;
+    hash2 ^= code;
+    hash2 = Math.imul(hash2, 0x27d4eb2d) >>> 0;
+  }
+  const hex = `${hash1.toString(16).padStart(8, "0")}${hash2.toString(16).padStart(8, "0")}${(hash1 ^ hash2).toString(16).padStart(8, "0")}${Math.imul(hash1 ^ 0x9e3779b9, hash2 ^ 0x85ebca6b).toString(16).replace("-", "").padStart(8, "0").slice(-8)}`;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+function generateKicadPcb(model) {
+  const lines = [];
+  lines.push("(kicad_pcb");
+  lines.push("  (version 20240108)");
+  lines.push("  (generator \"dupont-grid-local-web\")");
+  lines.push("  (general");
+  lines.push("    (thickness 1.6)");
+  lines.push("  )");
+  lines.push("  (paper \"A4\")");
+  lines.push("  (layers");
+  lines.push("    (0 \"F.Cu\" signal)");
+  lines.push("    (31 \"B.Cu\" signal)");
+  lines.push("    (36 \"B.SilkS\" user \"B.Silkscreen\")");
+  lines.push("    (37 \"F.SilkS\" user \"F.Silkscreen\")");
+  lines.push("    (44 \"Edge.Cuts\" user)");
+  lines.push("  )");
+  lines.push("  (setup");
+  lines.push("    (pad_to_mask_clearance 0)");
+  lines.push("    (pcbplotparams");
+  lines.push("      (layerselection 0x00000000_00000000)");
+  lines.push("      (plot_on_all_layers_selection 0x00000000_00000000)");
+  lines.push("      (disableapertmacros no)");
+  lines.push("      (usegerberextensions no)");
+  lines.push("      (usegerberattributes yes)");
+  lines.push("      (usegerberadvancedattributes yes)");
+  lines.push("      (creategerberjobfile yes)");
+  lines.push("      (dashed_line_dash_ratio 12.000000)");
+  lines.push("      (dashed_line_gap_ratio 3.000000)");
+  lines.push("      (svgprecision 4)");
+  lines.push("      (plotframeref no)");
+  lines.push("      (viasonmask no)");
+  lines.push("      (mode 1)");
+  lines.push("      (useauxorigin no)");
+  lines.push("      (hpglpennumber 1)");
+  lines.push("      (hpglpenspeed 20)");
+  lines.push("      (hpglpendiameter 15.000000)");
+  lines.push("      (pdf_front_fp_property_popups yes)");
+  lines.push("      (pdf_back_fp_property_popups yes)");
+  lines.push("      (pdf_metadata yes)");
+  lines.push("      (pdf_single_document no)");
   lines.push("    )");
-  lines.push(`    (symbol "${pinUnitName}"`);
-  layout.pins.forEach((entry) => {
-    lines.push(`      (pin passive line (at ${round(entry.x, 3)} ${entry.y} ${entry.angle}) (length ${layout.pinLength}) (name "${escapeKicad(entry.pin.name)}" (effects (font (size 1.27 1.27)))) (number "${escapeKicad(entry.pin.number)}" (effects (font (size 1.27 1.27)))))`);
-  });
+  lines.push("  )");
+  lines.push("  (net 0 \"\")");
+  lines.push(...buildKicadEmbeddedFootprintLines(model, "  ", "J1", 100, 100));
+  lines.push(")");
+  return `${lines.join("\n")}\n`;
+}
+
+function generateKicadSchematic(model) {
+  const rootUuid = createKicadUuid(`${model.name}:schematic`);
+  const symbolUuid = createKicadUuid(`${model.name}:symbol`);
+  const symbolName = escapeKicad(model.name);
+  const footprintRef = escapeKicad(`${model.name}:${model.name}`);
+  const lines = [];
+  lines.push("(kicad_sch");
+  lines.push("  (version 20230121)");
+  lines.push("  (generator \"dupont-grid-local-web\")");
+  lines.push(`  (uuid "${rootUuid}")`);
+  lines.push("  (paper \"A4\")");
+  lines.push("  (lib_symbols");
+  lines.push(...buildKicadSymbolDefinitionLines(model, "    "));
+  lines.push("  )");
+  lines.push(`  (symbol (lib_id "${symbolName}") (at 127 76.2 0) (unit 1) (in_bom yes) (on_board yes) (dnp no)`);
+  lines.push(`    (uuid "${symbolUuid}")`);
+  lines.push("    (fields_autoplaced)");
+  lines.push("    (property \"Reference\" \"J1\" (id 0) (at 127 66.04 0) (effects (font (size 1.27 1.27))))");
+  lines.push(`    (property "Value" "${symbolName}" (id 1) (at 127 86.36 0) (effects (font (size 1.27 1.27))))`);
+  lines.push(`    (property "Footprint" "${footprintRef}" (id 2) (at 127 76.2 0) (effects (font (size 1.27 1.27)) hide))`);
+  lines.push("    (property \"Datasheet\" \"\" (id 3) (at 127 76.2 0) (effects (font (size 1.27 1.27)) hide))");
+  lines.push("    (instances");
+  lines.push("      (project \"\"");
+  lines.push("        (path \"/\"");
+  lines.push("          (reference \"J1\")");
+  lines.push("          (unit 1)");
+  lines.push("        )");
+  lines.push("      )");
   lines.push("    )");
+  lines.push("  )");
+  lines.push("  (sheet_instances");
+  lines.push("    (path \"/\" (page \"1\"))");
   lines.push("  )");
   lines.push(")");
   return `${lines.join("\n")}\n`;
 }
 
-function escapeKicad(value) {
-  return String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+function generateKicadFpLibTable(model) {
+  return `(fp_lib_table\n  (lib (name "${escapeKicad(model.name)}")(type "KiCad")(uri "\${KIPRJMOD}/${escapeKicad(model.name)}.pretty")(options "")(descr "Generated by dupont-grid-local-web"))\n)\n`;
+}
+
+function generateKicadSymLibTable(model) {
+  return `(sym_lib_table\n  (lib (name "${escapeKicad(model.name)}")(type "KiCad")(uri "\${KIPRJMOD}/${escapeKicad(model.name)}.kicad_sym")(options "")(descr "Generated by dupont-grid-local-web"))\n)\n`;
 }
 
 function exportFile(kind) {
@@ -2194,12 +2357,28 @@ function exportFile(kind) {
   if (kind === "kicad-zip") {
     const files = [
       {
+        name: `${model.name}.kicad_sch`,
+        content: generateKicadSchematic(model)
+      },
+      {
+        name: `${model.name}.kicad_pcb`,
+        content: generateKicadPcb(model)
+      },
+      {
         name: `${model.name}.kicad_sym`,
         content: generateKicadSymbol(model)
       },
       {
         name: `${model.name}.pretty/${model.name}.kicad_mod`,
         content: generateKicadFootprint(model)
+      },
+      {
+        name: "fp-lib-table",
+        content: generateKicadFpLibTable(model)
+      },
+      {
+        name: "sym-lib-table",
+        content: generateKicadSymLibTable(model)
       }
     ];
     downloadBlob(`${model.name}.kicad-source.zip`, createZipBlob(files), "application/zip");
@@ -2223,11 +2402,11 @@ function exportFile(kind) {
   if (kind === "lceda-schematic") {
     downloadText(`${model.name}.lceda-schematic.json`, JSON.stringify(generateEasyEdaSchematicDocument(model), null, 2), "application/json");
   }
-  if (kind === "kicad-mod") {
-    downloadText(`${model.name}.kicad_mod`, generateKicadFootprint(model), "text/plain");
+  if (kind === "kicad-pcb") {
+    downloadText(`${model.name}.kicad_pcb`, generateKicadPcb(model), "text/plain");
   }
-  if (kind === "kicad-sym") {
-    downloadText(`${model.name}.kicad_sym`, generateKicadSymbol(model), "text/plain");
+  if (kind === "kicad-sch") {
+    downloadText(`${model.name}.kicad_sch`, generateKicadSchematic(model), "text/plain");
   }
 }
 
@@ -2758,8 +2937,8 @@ dom.cellEnabled.addEventListener("change", () => {
 });
 
 dom.downloadKicadZip.addEventListener("click", () => exportFile("kicad-zip"));
-dom.downloadKicadMod.addEventListener("click", () => exportFile("kicad-mod"));
-dom.downloadKicadSym.addEventListener("click", () => exportFile("kicad-sym"));
+dom.downloadKicadPcb.addEventListener("click", () => exportFile("kicad-pcb"));
+dom.downloadKicadSch.addEventListener("click", () => exportFile("kicad-sch"));
 
 if (!restoreProjectCache()) {
   syncInputsFromState();

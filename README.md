@@ -2,9 +2,9 @@
 
 这是一个本地静态网页应用，用网格方式生成杜邦母座焊孔阵列，并导出：
 
-- KiCad 源文件 ZIP，包含器件库和封装库
-- KiCad 封装 `.kicad_mod`
-- KiCad 器件 `.kicad_sym`
+- KiCad 源文件 ZIP，包含 `.kicad_pcb`、`.kicad_sch` 以及配套库文件
+- KiCad PCB `.kicad_pcb`
+- KiCad 原理图 `.kicad_sch`
 
 ## 使用
 
@@ -63,7 +63,10 @@
 
 KiCad 源文件 ZIP 内包含：
 
+- `*.kicad_pcb`：KiCad PCB 文件，内嵌封装实例
+- `*.kicad_sch`：KiCad 原理图文件，内嵌符号定义与实例
 - `*.kicad_sym`：KiCad 符号库，包含器件引脚
 - `*.pretty/*.kicad_mod`：KiCad 封装库目录，包含通孔焊盘和丝印
+- `fp-lib-table` / `sym-lib-table`：工程内库表，指向同包内生成的库文件
 
-解压后可以把 `.kicad_sym` 添加为符号库，把 `.pretty` 目录添加为封装库。
+解压后可以直接打开 `.kicad_pcb` / `.kicad_sch`，也可以把 `.kicad_sym` 和 `.pretty` 作为普通库文件单独使用。
