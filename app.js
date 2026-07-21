@@ -16,6 +16,116 @@ const DEFAULT_LAYERS = [
   "12~Document~#FFFFFF~true~false~true"
 ];
 
+const EASYEDA_PRO_EDIT_VERSION = "3.2.127";
+const EASYEDA_PRO_LAYERS = [
+  [1, "TOP", "Top Layer", true, true, "#FF0000", "#FF0000"],
+  [15, "SIGNAL", "In1.Cu", false, false, "#999966", "#999966"],
+  [16, "SIGNAL", "In2.Cu", false, false, "#008000", "#008000"],
+  [17, "SIGNAL", "In3.Cu", false, false, "#00FF00", "#00FF00"],
+  [18, "SIGNAL", "In4.Cu", false, false, "#BC8E00", "#BC8E00"],
+  [19, "SIGNAL", "In5.Cu", false, false, "#70DBFA", "#70DBFA"],
+  [20, "SIGNAL", "In6.Cu", false, false, "#00CC66", "#00CC66"],
+  [21, "SIGNAL", "In7.Cu", false, false, "#9966FF", "#9966FF"],
+  [22, "SIGNAL", "In8.Cu", false, false, "#800080", "#800080"],
+  [23, "SIGNAL", "In9.Cu", false, false, "#008080", "#008080"],
+  [24, "SIGNAL", "In10.Cu", false, false, "#15935F", "#15935F"],
+  [25, "SIGNAL", "In11.Cu", false, false, "#000080", "#000080"],
+  [26, "SIGNAL", "In12.Cu", false, false, "#00B400", "#00B400"],
+  [27, "SIGNAL", "In13.Cu", false, false, "#2E4756", "#2E4756"],
+  [28, "SIGNAL", "In14.Cu", false, false, "#99842F", "#99842F"],
+  [29, "SIGNAL", "In15.Cu", false, false, "#FFFFAA", "#FFFFAA"],
+  [30, "SIGNAL", "In16.Cu", false, false, "#99842F", "#99842F"],
+  [31, "SIGNAL", "In17.Cu", false, false, "#2E4756", "#2E4756"],
+  [32, "SIGNAL", "In18.Cu", false, false, "#3535FF", "#3535FF"],
+  [33, "SIGNAL", "In19.Cu", false, false, "#8000BC", "#8000BC"],
+  [34, "SIGNAL", "In20.Cu", false, false, "#43AE5F", "#43AE5F"],
+  [35, "SIGNAL", "In21.Cu", false, false, "#C3ECCE", "#C3ECCE"],
+  [36, "SIGNAL", "In22.Cu", false, false, "#728978", "#728978"],
+  [37, "SIGNAL", "In23.Cu", false, false, "#39503F", "#39503F"],
+  [38, "SIGNAL", "In24.Cu", false, false, "#0C715D", "#0C715D"],
+  [39, "SIGNAL", "In25.Cu", false, false, "#5A8A80", "#5A8A80"],
+  [40, "SIGNAL", "In26.Cu", false, false, "#2B937E", "#2B937E"],
+  [41, "SIGNAL", "In27.Cu", false, false, "#23999D", "#23999D"],
+  [42, "SIGNAL", "In28.Cu", false, false, "#45B4E3", "#45B4E3"],
+  [43, "SIGNAL", "In29.Cu", false, false, "#215DA1", "#215DA1"],
+  [44, "SIGNAL", "In30.Cu", false, false, "#4564D7", "#4564D7"],
+  [2, "BOTTOM", "Bottom Layer", true, true, "#0000FF", "#0000FF"],
+  [14, "MECHANICAL", "Mechanical Layer", true, true, "#33CC99", "#33CC99"],
+  [8, "BOT_PASTE_MASK", "Bottom Paste Mask Layer", true, true, "#800000", "#800000"],
+  [7, "TOP_PASTE_MASK", "Top Paste Mask Layer", true, true, "#808080", "#808080"],
+  [4, "BOT_SILK", "Bottom Silkscreen Layer", true, true, "#66CC33", "#66CC33"],
+  [3, "TOP_SILK", "Top Silkscreen Layer", true, true, "#FFCC00", "#FFCC00"],
+  [6, "BOT_SOLDER_MASK", "Bottom Solder Mask Layer", true, true, "#AA00FF", "#AA00FF"],
+  [5, "TOP_SOLDER_MASK", "Top Solder Mask Layer", true, true, "#800080", "#800080"],
+  [71, "CUSTOM", "Dwgs.User", false, false, "#6464FF", "#6464FF"],
+  [72, "CUSTOM", "Cmts.User", false, false, "#33CC99", "#33CC99"],
+  [73, "CUSTOM", "Eco1.User", false, false, "#CC9999", "#CC9999"],
+  [13, "DOCUMENT", "Document Layer", true, true, "#66CCFF", "#66CCFF"],
+  [11, "OUTLINE", "Board Outline Layer", true, true, "#F022F0", "#F022F0"],
+  [74, "CUSTOM", "Margin", false, false, "#FFFFFF", "#FFFFFF"],
+  [75, "CUSTOM", "B.CrtYd", false, false, "#FF00FF", "#FF00FF"],
+  [76, "CUSTOM", "F.CrtYd", false, false, "#C0C0C0", "#C0C0C0"],
+  [10, "BOT_ASSEMBLY", "Bottom Assembly Layer", true, true, "#9069E9", "#9069E9"],
+  [9, "TOP_ASSEMBLY", "Top Assembly Layer", true, true, "#6969E9", "#6969E9"],
+  [77, "CUSTOM", "User.1", false, false, "#DEAB8A", "#DEAB8A"],
+  [78, "CUSTOM", "User.2", false, false, "#FEDCBD", "#FEDCBD"],
+  [79, "CUSTOM", "User.3", false, false, "#7F7522", "#7F7522"],
+  [80, "CUSTOM", "User.4", false, false, "#905A3D", "#905A3D"],
+  [81, "CUSTOM", "User.5", false, false, "#4D4F36", "#4D4F36"],
+  [82, "CUSTOM", "User.6", false, false, "#72BAA7", "#72BAA7"],
+  [83, "CUSTOM", "User.7", false, false, "#00A6AC", "#00A6AC"],
+  [84, "CUSTOM", "User.8", false, false, "#C99979", "#C99979"],
+  [85, "CUSTOM", "User.9", false, false, "#563624", "#563624"],
+  [12, "MULTI", "Multi-Layer", true, true, "#00CCCC", "#00CCCC"],
+  [86, "CUSTOM", "F.Adhes", true, true, "#5555FF", "#5555FF"],
+  [45, "SIGNAL", "Inner31", false, false, "#6969E9", "#343474"],
+  [46, "SIGNAL", "Inner32", false, false, "#9069E9", "#483474"],
+  [47, "HOLE", "Hole Layer", true, true, "#222222", "#111111"],
+  [48, "COMPONENT_SHAPE", "Component Shape Layer", true, false, "#00CCCC", "#006666"],
+  [49, "COMPONENT_MARKING", "Component Marking Layer", true, false, "#66FFCC", "#337F66"],
+  [50, "PIN_SOLDERING", "Pin Soldering Layer", true, false, "#CC9999", "#664C4C"],
+  [51, "PIN_FLOATING", "Pin Floating Layer", true, false, "#FF99FF", "#7F4C7F"],
+  [52, "COMPONENT_MODEL", "Component Model Layer", false, false, "#FFFFFF", "#7F7F7F"],
+  [53, "3D_SHELL_OUTLINE", "3D Shell Outline Layer", true, true, "#66FF99", "#337F4C"],
+  [54, "3D_SHELL_TOP", "3D Shell Top Layer", true, true, "#FFCCFF", "#7F667F"],
+  [55, "3D_SHELL_BOTTOM", "3D Shell Bottom Layer", true, true, "#0066CC", "#003366"],
+  [56, "DRILL_DRAWING", "Drill Drawing Layer", true, true, "#008080", "#004040"],
+  [57, "OTHER", "Ratline Layer", true, true, "#6464FF", "#32327F"],
+  [58, "TOP_STIFFENER", "Top Stiffener Layer", false, false, "#EEE666", "#777333"],
+  [59, "BOTTOM_STIFFENER", "Bottom Stiffener Layer", false, false, "#CCFF00", "#667F00"],
+  [87, "CUSTOM", "Custom17", false, false, "#99842F", "#4C4217"],
+  [88, "CUSTOM", "Custom18", false, false, "#FFFFAA", "#7F7F55"],
+  [89, "CUSTOM", "Custom19", false, false, "#99842F", "#4C4217"],
+  [90, "CUSTOM", "Custom20", false, false, "#2E4756", "#17232B"],
+  [91, "CUSTOM", "Custom21", false, false, "#00B400", "#005A00"],
+  [92, "CUSTOM", "Custom22", false, false, "#000080", "#000040"],
+  [93, "CUSTOM", "Custom23", false, false, "#15935F", "#00000A"],
+  [94, "CUSTOM", "Custom24", false, false, "#008080", "#004040"],
+  [95, "CUSTOM", "Custom25", false, false, "#800080", "#400040"],
+  [96, "CUSTOM", "Custom26", false, false, "#9966FF", "#4C337F"],
+  [97, "CUSTOM", "Custom27", false, false, "#00CC66", "#006633"],
+  [98, "CUSTOM", "Custom28", false, false, "#70DBFA", "#386D7D"],
+  [99, "CUSTOM", "Custom29", false, false, "#BC8E00", "#5E4700"],
+  [100, "CUSTOM", "Custom30", false, false, "#00FF00", "#007F00"],
+  [361, "SUBSTRATE", "Dielectric1", false, false, "#000000", "#000000"]
+];
+
+const EASYEDA_PRO_PHYSICAL_LAYERS = [
+  [1, "", 1.379, 0, 0, true, 4],
+  [3, "", 0, 0, 0, true, 1],
+  [5, "", 0.394, 3.3, 0.02, true, 3],
+  [7, "", 0, 0, 0, true, 2],
+  [2, "", 1.378, 0, 0, true, 5],
+  [4, "", 0, 0, 0, true, 8],
+  [6, "", 0.394, 3.3, 0.02, true, 6],
+  [8, "", 0, 0, 0, true, 7]
+];
+const EASYEDA_PRO_HALF_INACTIVE_LAYER_IDS = new Set([
+  ...Array.from({ length: 15 }, (_, index) => index + 45),
+  ...Array.from({ length: 14 }, (_, index) => index + 87),
+  361
+]);
+
 const SYMBOL_SIDES = ["top", "bottom", "left", "right"];
 const CACHE_COOKIE_META = "dupont_grid_project_cache_meta";
 const CACHE_COOKIE_CHUNK_PREFIX = "dupont_grid_project_cache_";
@@ -145,9 +255,9 @@ const dom = {
   symbolPreview: document.querySelector("#symbolPreview"),
   pcbPreview: document.querySelector("#pcbPreview"),
   projectStatus: document.querySelector("#projectStatus"),
-  downloadKicadZip: document.querySelector("#downloadKicadZip"),
-  downloadKicadPcb: document.querySelector("#downloadKicadPcb"),
-  downloadKicadSch: document.querySelector("#downloadKicadSch")
+  downloadEasyEdaProCombined: document.querySelector("#downloadEasyEdaProCombined"),
+  downloadEasyEdaProSymbol: document.querySelector("#downloadEasyEdaProSymbol"),
+  downloadEasyEdaProFootprint: document.querySelector("#downloadEasyEdaProFootprint")
 };
 
 function createState(rows, cols) {
@@ -1402,7 +1512,7 @@ function validateModel() {
     seen.add(number);
   }
   if (duplicates.size) return { level: "danger", message: `引脚编号重复：${Array.from(duplicates).join(", ")}` };
-  return { level: "ok", message: "可以导出 KiCad 器件与封装。" };
+  return { level: "ok", message: "可以导出嘉立创EDA专业版器件库。" };
 }
 
 function buildModel() {
@@ -2096,6 +2206,644 @@ function makeEasyEdaPin(pinEntry, geometry, id) {
   ].join("^^");
 }
 
+function createEasyEdaProId(seed = "") {
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+  return createKicadUuid(`${seed}:${Date.now()}:${Math.random()}`).replace(/-/g, "");
+}
+
+function createEasyEdaProContext(model) {
+  const timestamp = Date.now();
+  return {
+    timestamp,
+    version: String(timestamp),
+    creatorId: createEasyEdaProId(`${model.name}:creator`),
+    deviceId: createEasyEdaProId(`${model.name}:device`),
+    symbolId: createEasyEdaProId(`${model.name}:symbol`),
+    footprintId: createEasyEdaProId(`${model.name}:footprint`),
+    symbolClient: createEasyEdaProId(`${model.name}:symbol-client`).slice(0, 16),
+    footprintClient: createEasyEdaProId(`${model.name}:footprint-client`).slice(0, 16),
+    geometryClient: "chameleon-client"
+  };
+}
+
+function serializeEasyEdaProRecord(type, payload, headerFields = {}) {
+  return `${JSON.stringify({ type, ...headerFields })}||${JSON.stringify(payload)}|\n`;
+}
+
+function createEasyEdaProDocHead(context, docType, uuid, client) {
+  return {
+    docType,
+    client,
+    uuid,
+    updateTime: context.timestamp,
+    version: context.version,
+    editVersion: EASYEDA_PRO_EDIT_VERSION,
+    user: {
+      uuid: context.creatorId,
+      username: "",
+      nickname: ""
+    }
+  };
+}
+
+function mmToEasyEdaProSymbol(value) {
+  return round(Number(value) / 0.254, 5);
+}
+
+function mmToEasyEdaProFootprint(value) {
+  return round(Number(value) * 39.37007874015748, 5);
+}
+
+function createEasyEdaProSymbolAttr(partId, parentId, key, value, zIndex, options = {}) {
+  return {
+    partId,
+    groupId: "",
+    locked: false,
+    zIndex,
+    parentId,
+    key,
+    value: String(value ?? ""),
+    keyVisible: false,
+    valueVisible: Boolean(options.visible),
+    x: options.x ?? null,
+    y: options.y ?? null,
+    rotation: options.rotation ?? 0,
+    color: null,
+    fillColor: null,
+    fontFamily: options.fontFamily ?? null,
+    fontSize: options.fontSize ?? 5,
+    strikeout: false,
+    underline: false,
+    italic: false,
+    fontWeight: false,
+    align: options.align || "LEFT_BOTTOM"
+  };
+}
+
+function getEasyEdaProSymbolPinPlacement(entry, layout) {
+  const x = mmToEasyEdaProSymbol(entry.x);
+  const y = mmToEasyEdaProSymbol(-entry.y);
+  const bodyLeft = mmToEasyEdaProSymbol(-layout.bodyHalfW);
+  const bodyRight = mmToEasyEdaProSymbol(layout.bodyHalfW);
+  const bodyTop = mmToEasyEdaProSymbol(-layout.bodyHalfH);
+  const bodyBottom = mmToEasyEdaProSymbol(layout.bodyHalfH);
+  const pinLength = mmToEasyEdaProSymbol(layout.pinLength);
+
+  if (entry.side === "left") {
+    return {
+      x,
+      y,
+      length: pinLength,
+      rotation: 0,
+      name: { x: round(bodyLeft + 4, 5), y, rotation: 0, align: "LEFT_MIDDLE" },
+      number: { x: round(x + pinLength / 2, 5), y, rotation: 0, align: "CENTER_BOTTOM" }
+    };
+  }
+  if (entry.side === "right") {
+    return {
+      x,
+      y,
+      length: pinLength,
+      rotation: 180,
+      name: { x: round(bodyRight - 4, 5), y, rotation: 0, align: "RIGHT_MIDDLE" },
+      number: { x: round(x - pinLength / 2, 5), y, rotation: 0, align: "CENTER_BOTTOM" }
+    };
+  }
+  if (entry.side === "top") {
+    return {
+      x,
+      y,
+      length: pinLength,
+      rotation: 90,
+      name: { x, y: round(bodyTop + 4, 5), rotation: 90, align: "RIGHT_MIDDLE" },
+      number: { x: round(x - 2, 5), y, rotation: 90, align: "LEFT_BOTTOM" }
+    };
+  }
+  return {
+    x,
+    y,
+    length: pinLength,
+    rotation: 270,
+    name: { x, y: round(bodyBottom - 4, 5), rotation: 270, align: "RIGHT_MIDDLE" },
+    number: { x: round(x + 2, 5), y, rotation: 270, align: "LEFT_BOTTOM" }
+  };
+}
+
+function generateEasyEdaProSymbolRecords(model, context) {
+  const docHead = createEasyEdaProDocHead(context, "SYMBOL", context.symbolId, context.symbolClient);
+  const layout = buildSymbolLayout(model);
+  const partId = "1";
+  const records = [
+    serializeEasyEdaProRecord("DOCHEAD", docHead),
+    serializeEasyEdaProRecord("META", {
+      title: model.name,
+      description: "",
+      tags: [],
+      docType: 2,
+      source: ""
+    }, { ticket: 1, id: "META" }),
+    serializeEasyEdaProRecord("DOCHEAD", docHead)
+  ];
+  let ticket = 1;
+  let elementId = 0;
+  let zIndex = 0;
+  const add = (type, id, payload) => {
+    records.push(serializeEasyEdaProRecord(type, payload, {
+      ticket: ticket++,
+      id,
+      client: context.geometryClient
+    }));
+  };
+
+  add("CANVAS", "CANVAS", { originX: 0, originY: 0 });
+  add("PART", partId, { title: partId });
+  add("RECT", `ie${elementId++}`, {
+    partId,
+    groupId: "",
+    locked: false,
+    zIndex: zIndex++,
+    dotX1: mmToEasyEdaProSymbol(-layout.bodyHalfW),
+    dotY1: mmToEasyEdaProSymbol(-layout.bodyHalfH),
+    dotX2: mmToEasyEdaProSymbol(layout.bodyHalfW),
+    dotY2: mmToEasyEdaProSymbol(layout.bodyHalfH),
+    radiusX: 0,
+    radiusY: 0,
+    rotation: 0,
+    strokeColor: null,
+    strokeWidth: 1,
+    strokeStyle: "SOLID",
+    fillColor: null,
+    fillStyle: "NONE"
+  });
+
+  layout.pins.forEach((entry) => {
+    const pinId = `ie${elementId++}`;
+    const nameId = `ie${elementId++}`;
+    const numberId = `ie${elementId++}`;
+    const typeId = `ie${elementId++}`;
+    const placement = getEasyEdaProSymbolPinPlacement(entry, layout);
+    const pinZ = zIndex++;
+    const nameZ = zIndex++;
+    const numberZ = zIndex++;
+    const typeZ = zIndex++;
+    add("ATTR", nameId, createEasyEdaProSymbolAttr(partId, pinId, "Pin Name", entry.pin.name, nameZ, {
+      ...placement.name,
+      visible: true,
+      fontSize: 5
+    }));
+    add("ATTR", numberId, createEasyEdaProSymbolAttr(partId, pinId, "Pin Number", entry.pin.number, numberZ, {
+      ...placement.number,
+      visible: true,
+      fontSize: 5
+    }));
+    add("ATTR", typeId, createEasyEdaProSymbolAttr(partId, pinId, "Pin Type", "Passive", typeZ, {
+      visible: false,
+      fontSize: 6.75
+    }));
+    add("PIN", pinId, {
+      partId,
+      groupId: "",
+      locked: false,
+      zIndex: pinZ,
+      display: true,
+      x: placement.x,
+      y: placement.y,
+      length: placement.length,
+      rotation: placement.rotation,
+      color: null,
+      pinShape: "NONE"
+    });
+  });
+
+  const bodyTop = mmToEasyEdaProSymbol(-layout.bodyHalfH);
+  const bodyBottom = mmToEasyEdaProSymbol(layout.bodyHalfH);
+  const addPartAttr = (key, value, options) => {
+    add("ATTR", `ie${elementId++}`, createEasyEdaProSymbolAttr(partId, partId, key, value, zIndex++, options));
+  };
+  addPartAttr("Name", model.name, { visible: false, fontSize: 196.85039, align: "CENTER_MIDDLE" });
+  addPartAttr("Device", model.name, { visible: false, fontSize: 6.75 });
+  addPartAttr("Designator", "J?", {
+    visible: true,
+    x: 0,
+    y: round(bodyBottom + 5, 5),
+    fontSize: 3.93701,
+    align: "CENTER_MIDDLE"
+  });
+  addPartAttr("Footprint", "", {
+    visible: false,
+    fontSize: 3.93701,
+    align: "CENTER_MIDDLE"
+  });
+  addPartAttr("Value", model.name, {
+    visible: true,
+    x: 0,
+    y: round(bodyTop - 5, 5),
+    fontSize: 3.93701,
+    align: "CENTER_MIDDLE"
+  });
+  addPartAttr("UserDocLink", "", { visible: false, fontSize: 3.93701, align: "CENTER_MIDDLE" });
+  return records.join("");
+}
+
+function easyEdaProFootprintPoint(model, xMm, yMm) {
+  const centerX = ((model.cols - 1) * model.pitchMm) / 2;
+  const centerY = ((model.rows - 1) * model.pitchMm) / 2;
+  return {
+    x: mmToEasyEdaProFootprint(xMm - centerX),
+    y: mmToEasyEdaProFootprint(centerY - yMm)
+  };
+}
+
+function easyEdaProCenteredPoint(xMm, yMm) {
+  return {
+    x: mmToEasyEdaProFootprint(xMm),
+    y: mmToEasyEdaProFootprint(-yMm)
+  };
+}
+
+function createEasyEdaProFootprintAttr(key, value, zIndex, options = {}) {
+  return {
+    layerId: 3,
+    groupId: "",
+    locked: false,
+    zIndex,
+    partitionId: null,
+    parentId: "",
+    key,
+    value: String(value ?? ""),
+    keyVisible: false,
+    valueVisible: Boolean(options.visible),
+    x: options.x ?? null,
+    y: options.y ?? null,
+    angle: 0,
+    origin: options.origin || "LEFT_BOTTOM",
+    fontFamily: "default",
+    fontSize: options.fontSize ?? 67.5,
+    strokeWidth: options.strokeWidth ?? 6,
+    italic: false,
+    expansion: 0,
+    reverse: false,
+    mirror: false,
+    specialColor: null
+  };
+}
+
+function appendEasyEdaProSilkTextPolys(text, placement, addLine) {
+  const value = String(text ?? "").trim();
+  if (!value) return;
+  const glyphHeight = Math.max(1.2, (Number(placement?.size) || 0.8) * 1.8);
+  const pixel = glyphHeight / 5;
+  const glyphAdvance = pixel * 4;
+  const totalWidth = glyphAdvance * value.length - pixel;
+  const anchor = placement?.anchor || "start";
+  const strokeMm = Math.max(0.18, (Number(placement?.thickness) || pixel * 0.8) * 1.4);
+  const startX = anchor === "middle"
+    ? placement.x - totalWidth / 2
+    : anchor === "end"
+      ? placement.x - totalWidth
+      : placement.x;
+  const topY = placement.y - glyphHeight / 2;
+
+  for (let charIndex = 0; charIndex < value.length; charIndex += 1) {
+    const glyph = getEasyEdaSilkGlyph(value[charIndex]);
+    const glyphX = startX + charIndex * glyphAdvance;
+    for (let row = 0; row < glyph.length; row += 1) {
+      const rowPattern = glyph[row];
+      let runStart = -1;
+      for (let col = 0; col <= rowPattern.length; col += 1) {
+        const filled = rowPattern[col] === "1";
+        if (filled) {
+          if (runStart < 0) runStart = col;
+          continue;
+        }
+        if (runStart < 0) continue;
+        addLine(
+          glyphX + runStart * pixel + pixel * 0.2,
+          topY + row * pixel + pixel / 2,
+          glyphX + col * pixel - pixel * 0.2,
+          topY + row * pixel + pixel / 2,
+          strokeMm
+        );
+        runStart = -1;
+      }
+    }
+  }
+}
+
+function generateEasyEdaProFootprintRecords(model, context) {
+  const docHead = createEasyEdaProDocHead(context, "FOOTPRINT", context.footprintId, context.footprintClient);
+  const records = [
+    serializeEasyEdaProRecord("DOCHEAD", docHead),
+    serializeEasyEdaProRecord("META", {
+      title: model.name,
+      description: "",
+      tags: [],
+      source: ""
+    }, { ticket: 1, id: "META" }),
+    serializeEasyEdaProRecord("DOCHEAD", docHead)
+  ];
+  let ticket = 1;
+  let elementId = 0;
+  let zIndex = 0;
+  const add = (type, id, payload, client = context.geometryClient) => {
+    records.push(serializeEasyEdaProRecord(type, payload, {
+      ticket: ticket++,
+      id,
+      client
+    }));
+  };
+
+  add("CANVAS", "CANVAS", {
+    originX: 0,
+    originY: 0,
+    unit: "mil",
+    gridXSize: 5,
+    gridYSize: 5,
+    snapXSize: 5,
+    snapYSize: 5,
+    altSnapXSize: 5,
+    altSnapYSize: 5,
+    gridType: "NONE",
+    multiGridType: "NONE",
+    multiGridRatio: 5,
+    highlightValue: 0.5,
+    layerBrightness: "NORMAL"
+  });
+  EASYEDA_PRO_LAYERS.forEach(([id, layerType, layerName, use, show, activeColor, inactiveColor]) => {
+    add("LAYER", JSON.stringify(["LAYER", id]), {
+      layerType,
+      layerName,
+      use,
+      show,
+      locked: id === 57,
+      activeColor,
+      inactiveColor,
+      activateTransparency: 1,
+      inactiveTransparency: EASYEDA_PRO_HALF_INACTIVE_LAYER_IDS.has(id) ? 0.5 : 1
+    });
+  });
+  add("ACTIVE_LAYER", "ACTIVE_LAYER", { layerId: 1 });
+  EASYEDA_PRO_PHYSICAL_LAYERS.forEach(([id, material, thickness, permittivity, lossTangent, isKeepIsland, physicalZ]) => {
+    add("LAYER_PHYS", JSON.stringify(["LAYER_PHYS", id]), {
+      material,
+      thickness,
+      permittivity,
+      lossTangent,
+      isKeepIsland,
+      zIndex: physicalZ
+    });
+  });
+  add("PREFERENCE", "PREFERENCE", {
+    startTrackWidthFollowLast: false,
+    lastTrackWidth: 10,
+    startViaSizeFollowLast: false,
+    lastViaInnerDiameter: 24,
+    lastViaDiameter: 12,
+    snap: true,
+    routingMode: "NONE",
+    routingCorner: "L45",
+    removeLoop: true,
+    rotatingObject: true,
+    trackFollow: null,
+    stretchTrackMinCorner: 1,
+    preferenceConfig: "",
+    realTimeUpdateUnusedLayers: false,
+    unusedPadRange: "ALL",
+    pushVia: "OPTIMIZA_NONE",
+    pathOptimization4BePushed: "NONE",
+    currentPathOptimization4BePushed: "OPTIMIZA_NONE",
+    removeCircuitsContainingVias: true,
+    removeAntenna: true
+  });
+
+  const margins = getOutlineMargins(model);
+  const centerY = ((model.rows - 1) * model.pitchMm) / 2;
+  const outlineTop = mmToEasyEdaProFootprint(centerY + margins.top);
+  add("ATTR", `ie${elementId++}`, createEasyEdaProFootprintAttr("Name", model.name, zIndex++, {
+    visible: false,
+    fontSize: 67.5,
+    strokeWidth: 6
+  }));
+  add("ATTR", `ie${elementId++}`, createEasyEdaProFootprintAttr("Device", model.name, zIndex++, {
+    visible: false,
+    fontSize: 67.5,
+    strokeWidth: 6
+  }));
+  add("ATTR", `ie${elementId++}`, createEasyEdaProFootprintAttr("Designator", "J?", zIndex++, {
+    visible: true,
+    x: 0,
+    y: round(outlineTop + mmToEasyEdaProFootprint(1.5), 5),
+    origin: "CENTER_MIDDLE",
+    fontSize: 39.3701,
+    strokeWidth: 5.90551
+  }));
+
+  const addPolyPoints = (p1, p2, widthMm) => {
+    add("POLY", `ie${elementId++}`, {
+      layerId: 3,
+      groupId: "",
+      locked: false,
+      zIndex: zIndex++,
+      partitionId: null,
+      polyType: "NORMAL",
+      netName: "",
+      width: mmToEasyEdaProFootprint(widthMm),
+      path: [p1.x, p1.y, "L", p2.x, p2.y],
+      specialColor: null
+    });
+  };
+  const addCenteredPoly = (x1, y1, x2, y2, widthMm) => {
+    addPolyPoints(easyEdaProCenteredPoint(x1, y1), easyEdaProCenteredPoint(x2, y2), widthMm);
+  };
+  const addGridPoly = (x1, y1, x2, y2, widthMm) => {
+    addPolyPoints(easyEdaProFootprintPoint(model, x1, y1), easyEdaProFootprintPoint(model, x2, y2), widthMm);
+  };
+  const addGridRect = (x1, y1, x2, y2, widthMm) => {
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+    addGridPoly(left, top, right, top, widthMm);
+    addGridPoly(right, top, right, bottom, widthMm);
+    addGridPoly(right, bottom, left, bottom, widthMm);
+    addGridPoly(left, bottom, left, top, widthMm);
+  };
+
+  if (model.includeOutline) {
+    addGridRect(
+      -margins.left,
+      -margins.top,
+      (model.cols - 1) * model.pitchMm + margins.right,
+      (model.rows - 1) * model.pitchMm + margins.bottom,
+      model.silkWidthMm
+    );
+  }
+  appendEasyEdaProSilkTextPolys(model.name, {
+    ...getPartNameTextPlacement(model),
+    anchor: "middle"
+  }, addCenteredPoly);
+  model.pads.forEach((pad) => {
+    const placement = getPinNameSilkPlacement(model, pad);
+    if (placement) appendEasyEdaProSilkTextPolys(pad.name, placement, addCenteredPoly);
+  });
+  model.silkscreen.forEach((item) => {
+    if (item.type === "line") {
+      addGridPoly(item.x1Mm, item.y1Mm, item.x2Mm, item.y2Mm, model.silkWidthMm);
+    }
+    if (item.type === "rect") {
+      addGridRect(item.x1Mm, item.y1Mm, item.x2Mm, item.y2Mm, model.silkWidthMm);
+    }
+    if (item.type === "text") {
+      const local = footprintLocalPoint(model, item.xMm, item.yMm);
+      appendEasyEdaProSilkTextPolys(item.value, {
+        x: local.x,
+        y: local.y,
+        size: 0.8,
+        thickness: 0.15,
+        anchor: "start"
+      }, addCenteredPoly);
+    }
+  });
+
+  model.pads.forEach((pad) => {
+    const center = easyEdaProFootprintPoint(model, pad.col * model.pitchMm, pad.row * model.pitchMm);
+    add("PAD", `ie${elementId++}`, {
+      layerId: 12,
+      groupId: "",
+      locked: false,
+      zIndex: zIndex++,
+      partitionId: null,
+      netName: "",
+      num: String(pad.number),
+      centerX: center.x,
+      centerY: center.y,
+      padAngle: 0,
+      hole: {
+        holeType: "ROUND",
+        width: mmToEasyEdaProFootprint(model.drillMm),
+        height: mmToEasyEdaProFootprint(model.drillMm)
+      },
+      defaultPad: {
+        padType: "ELLIPSE",
+        width: mmToEasyEdaProFootprint(model.padMm),
+        height: mmToEasyEdaProFootprint(model.padMm)
+      },
+      specialPad: [],
+      padOffsetX: 0,
+      padOffsetY: 0,
+      relativeAngle: 90,
+      plated: true,
+      padType: "NORMAL",
+      topSolderExpansion: 0,
+      bottomSolderExpansion: 0,
+      topPasteExpansion: 0,
+      bottomPasteExpansion: 0,
+      connectMode: null,
+      spokeSpace: null,
+      spokeWidth: null,
+      spokeAngle: null,
+      unusedInnerLayers: [],
+      refs: []
+    });
+  });
+  add("NET", JSON.stringify(["NET", ""]), {
+    netType: null,
+    specialColor: null,
+    retLine: true,
+    differentialName: null,
+    isPositiveNet: false,
+    equalLengthGroupName: null
+  }, createEasyEdaProId(`${model.name}:net-client`).slice(0, 16));
+  return records.join("");
+}
+
+function createEasyEdaProIndexEntry(context, uuid, model, docType) {
+  return {
+    uuid,
+    path: "1234",
+    ticket: 1,
+    updateTime: context.timestamp,
+    createTime: context.timestamp,
+    title: model.name.toLowerCase(),
+    description: "",
+    display_title: model.name,
+    creator: { uuid: context.creatorId },
+    modifier: { uuid: context.creatorId },
+    owner: { uuid: "" },
+    tags: {},
+    docType
+  };
+}
+
+function generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFootprint, includeDevice) {
+  const device = {
+    uuid: context.deviceId,
+    path: "1234",
+    attributes: {
+      Symbol: includeSymbol ? context.symbolId : "",
+      Footprint: includeFootprint ? context.footprintId : "",
+      Description: "",
+      "Add into BOM": "yes"
+    },
+    images: [""],
+    ticket: 1,
+    updateTime: context.timestamp,
+    createTime: context.timestamp,
+    title: model.name.toLowerCase(),
+    description: "",
+    display_title: model.name,
+    creator: { uuid: context.creatorId },
+    modifier: { uuid: null, nickname: null, username: null },
+    owner: { uuid: null, nickname: null, username: null },
+    tags: {},
+    symbol_type: 2
+  };
+  const index = {
+    devices: {},
+    symbols: {},
+    footprints: {},
+    panelLibs: {}
+  };
+  if (includeDevice) {
+    index.devices[context.deviceId] = device;
+  }
+  if (includeSymbol) {
+    index.symbols[context.symbolId] = createEasyEdaProIndexEntry(context, context.symbolId, model, 2);
+  }
+  if (includeFootprint) {
+    index.footprints[context.footprintId] = createEasyEdaProIndexEntry(context, context.footprintId, model, 4);
+  }
+  return index;
+}
+
+function generateEasyEdaProPackage(model, mode) {
+  const includeSymbol = mode !== "footprint";
+  const includeFootprint = mode !== "symbol";
+  const includeDevice = mode === "combined";
+  const context = createEasyEdaProContext(model);
+  const suffix = mode === "symbol" ? "_Symbol" : mode === "footprint" ? "_Footprint" : "";
+  const archiveStem = `${model.name}${suffix}`;
+  const indexName = mode === "symbol" ? "symbol2.json" : mode === "footprint" ? "footprint2.json" : "device2.json";
+  let library = "";
+  if (includeSymbol) library += generateEasyEdaProSymbolRecords(model, context);
+  if (includeFootprint) library += generateEasyEdaProFootprintRecords(model, context);
+  library = library.replace(/\|\n$/, "");
+  return {
+    filename: `${archiveStem}.elibz2`,
+    files: [
+      { name: `${archiveStem}.elibu`, content: library },
+      {
+        name: indexName,
+        content: JSON.stringify(generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFootprint, includeDevice), null, 2)
+      }
+    ]
+  };
+}
+
 function generateKicadFootprint(model) {
   const lines = [];
   const metrics = getFootprintMetrics(model);
@@ -2364,6 +3112,11 @@ function generateKicadSymLibTable(model) {
 function exportFile(kind) {
   if (!assertExportable()) return;
   const model = buildModel();
+  if (kind === "lceda-pro-combined" || kind === "lceda-pro-symbol" || kind === "lceda-pro-footprint") {
+    const mode = kind === "lceda-pro-symbol" ? "symbol" : kind === "lceda-pro-footprint" ? "footprint" : "combined";
+    const packageData = generateEasyEdaProPackage(model, mode);
+    downloadBlob(packageData.filename, createZipBlob(packageData.files), "application/zip");
+  }
   if (kind === "kicad-zip") {
     const files = [
       {
@@ -2946,9 +3699,9 @@ dom.cellEnabled.addEventListener("change", () => {
   input.addEventListener("change", render);
 });
 
-dom.downloadKicadZip.addEventListener("click", () => exportFile("kicad-zip"));
-dom.downloadKicadPcb.addEventListener("click", () => exportFile("kicad-pcb"));
-dom.downloadKicadSch.addEventListener("click", () => exportFile("kicad-sch"));
+dom.downloadEasyEdaProCombined.addEventListener("click", () => exportFile("lceda-pro-combined"));
+dom.downloadEasyEdaProSymbol.addEventListener("click", () => exportFile("lceda-pro-symbol"));
+dom.downloadEasyEdaProFootprint.addEventListener("click", () => exportFile("lceda-pro-footprint"));
 
 if (!restoreProjectCache()) {
   syncInputsFromState();

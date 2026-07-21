@@ -10,7 +10,7 @@
   <header class="app-header">
     <div>
       <h1>杜邦座器件与 PCB 封装生成器</h1>
-      <p>本地网页应用，按网格生成 KiCad 器件与 PCB 封装源文件。</p>
+      <p>本地网页应用，按网格生成嘉立创EDA专业版器件与 PCB 封装库。</p>
     </div>
     <div class="status-pill" id="projectStatus">未生成</div>
   </header>
@@ -296,23 +296,23 @@
 
       <h2>器件预览</h2>
       <div class="symbol-preview-wrap">
-        <svg id="symbolPreview" class="symbol-preview" aria-label="KiCad 器件预览"></svg>
+        <svg id="symbolPreview" class="symbol-preview" aria-label="器件符号预览"></svg>
       </div>
 
       <h2>PCB 预览</h2>
       <div class="pcb-preview-wrap">
-        <svg id="pcbPreview" class="pcb-preview" aria-label="KiCad PCB 封装预览"></svg>
+        <svg id="pcbPreview" class="pcb-preview" aria-label="PCB 封装预览"></svg>
       </div>
 
       <h2>导出</h2>
       <div class="export-list">
-        <button id="downloadKicadZip" class="primary">KiCad 源文件 ZIP</button>
-        <button id="downloadKicadPcb">KiCad PCB</button>
-        <button id="downloadKicadSch">KiCad SCH</button>
+        <button id="downloadEasyEdaProCombined" class="primary">专业版完整器件库</button>
+        <button id="downloadEasyEdaProSymbol">原理图符号 elibz2</button>
+        <button id="downloadEasyEdaProFootprint">PCB 封装 elibz2</button>
       </div>
     </aside>
   </main>
 
-  <script src="app.js?v=20260721-kicad-sch-fix"></script>
+  <script src="app.js?v=20260721-elibz2"></script>
 </body>
 </html>
