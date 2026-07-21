@@ -2254,7 +2254,13 @@ function createKicadUuid(seed) {
     hash2 ^= code;
     hash2 = Math.imul(hash2, 0x27d4eb2d) >>> 0;
   }
-  const hex = `${hash1.toString(16).padStart(8, "0")}${hash2.toString(16).padStart(8, "0")}${(hash1 ^ hash2).toString(16).padStart(8, "0")}${Math.imul(hash1 ^ 0x9e3779b9, hash2 ^ 0x85ebca6b).toString(16).replace("-", "").padStart(8, "0").slice(-8)}`;
+  const words = [
+    hash1,
+    hash2,
+    (hash1 ^ hash2) >>> 0,
+    Math.imul(hash1 ^ 0x9e3779b9, hash2 ^ 0x85ebca6b) >>> 0
+  ];
+  const hex = words.map((value) => value.toString(16).padStart(8, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
@@ -2320,16 +2326,20 @@ function generateKicadSchematic(model) {
   lines.push("  (lib_symbols");
   lines.push(...buildKicadSymbolDefinitionLines(model, "    "));
   lines.push("  )");
-  lines.push(`  (symbol (lib_id "${symbolName}") (at 127 76.2 0) (unit 1) (in_bom yes) (on_board yes) (dnp no)`);
+  lines.push(`  (symbol (lib_id "${symbolName}") (at 127 76.2 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)`);
   lines.push(`    (uuid "${symbolUuid}")`);
   lines.push("    (fields_autoplaced)");
   lines.push("    (property \"Reference\" \"J1\" (id 0) (at 127 66.04 0) (effects (font (size 1.27 1.27))))");
   lines.push(`    (property "Value" "${symbolName}" (id 1) (at 127 86.36 0) (effects (font (size 1.27 1.27))))`);
   lines.push(`    (property "Footprint" "${footprintRef}" (id 2) (at 127 76.2 0) (effects (font (size 1.27 1.27)) hide))`);
   lines.push("    (property \"Datasheet\" \"\" (id 3) (at 127 76.2 0) (effects (font (size 1.27 1.27)) hide))");
+  model.pads.forEach((pad) => {
+    const pinUuid = createKicadUuid(`${model.name}:symbol:pin:${pad.number}`);
+    lines.push(`    (pin "${escapeKicad(pad.number)}" (uuid "${pinUuid}"))`);
+  });
   lines.push("    (instances");
-  lines.push("      (project \"\"");
-  lines.push("        (path \"/\"");
+  lines.push(`      (project "${symbolName}"`);
+  lines.push(`        (path "/${rootUuid}"`);
   lines.push("          (reference \"J1\")");
   lines.push("          (unit 1)");
   lines.push("        )");
