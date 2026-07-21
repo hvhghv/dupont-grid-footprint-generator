@@ -2439,7 +2439,7 @@ function generateEasyEdaProSymbolRecords(model, context) {
     align: "CENTER_MIDDLE"
   });
   addPartAttr("Value", model.name, {
-    visible: true,
+    visible: false,
     x: 0,
     y: round(bodyTop - 5, 5),
     fontSize: 3.93701,
@@ -2492,46 +2492,34 @@ function createEasyEdaProFootprintAttr(key, value, zIndex, options = {}) {
   };
 }
 
-function appendEasyEdaProSilkTextPolys(text, placement, addLine) {
+function createEasyEdaProFootprintString(text, placement, zIndex) {
   const value = String(text ?? "").trim();
-  if (!value) return;
-  const glyphHeight = Math.max(1.2, (Number(placement?.size) || 0.8) * 1.8);
-  const pixel = glyphHeight / 5;
-  const glyphAdvance = pixel * 4;
-  const totalWidth = glyphAdvance * value.length - pixel;
+  if (!value) return null;
+  const point = easyEdaProCenteredPoint(placement.x, placement.y);
   const anchor = placement?.anchor || "start";
-  const strokeMm = Math.max(0.18, (Number(placement?.thickness) || pixel * 0.8) * 1.4);
-  const startX = anchor === "middle"
-    ? placement.x - totalWidth / 2
-    : anchor === "end"
-      ? placement.x - totalWidth
-      : placement.x;
-  const topY = placement.y - glyphHeight / 2;
-
-  for (let charIndex = 0; charIndex < value.length; charIndex += 1) {
-    const glyph = getEasyEdaSilkGlyph(value[charIndex]);
-    const glyphX = startX + charIndex * glyphAdvance;
-    for (let row = 0; row < glyph.length; row += 1) {
-      const rowPattern = glyph[row];
-      let runStart = -1;
-      for (let col = 0; col <= rowPattern.length; col += 1) {
-        const filled = rowPattern[col] === "1";
-        if (filled) {
-          if (runStart < 0) runStart = col;
-          continue;
-        }
-        if (runStart < 0) continue;
-        addLine(
-          glyphX + runStart * pixel + pixel * 0.2,
-          topY + row * pixel + pixel / 2,
-          glyphX + col * pixel - pixel * 0.2,
-          topY + row * pixel + pixel / 2,
-          strokeMm
-        );
-        runStart = -1;
-      }
-    }
-  }
+  const sizeMm = Math.max(0.4, Number(placement?.size) || 0.8);
+  const strokeMm = Math.max(0.1, Number(placement?.thickness) || sizeMm * 0.15);
+  return {
+    layerId: 3,
+    groupId: "",
+    locked: false,
+    zIndex,
+    partitionId: null,
+    x: point.x,
+    y: point.y,
+    text: value,
+    origin: anchor === "middle" ? "CENTER_MIDDLE" : anchor === "end" ? "RIGHT_MIDDLE" : "LEFT_MIDDLE",
+    fontFamily: "default",
+    fontSize: mmToEasyEdaProFootprint(sizeMm),
+    strokeWidth: mmToEasyEdaProFootprint(strokeMm),
+    bold: false,
+    italic: false,
+    expansion: 0,
+    angle: 0,
+    reverse: false,
+    mirror: false,
+    specialColor: null
+  };
 }
 
 function generateEasyEdaProFootprintRecords(model, context) {
@@ -2656,9 +2644,6 @@ function generateEasyEdaProFootprintRecords(model, context) {
       specialColor: null
     });
   };
-  const addCenteredPoly = (x1, y1, x2, y2, widthMm) => {
-    addPolyPoints(easyEdaProCenteredPoint(x1, y1), easyEdaProCenteredPoint(x2, y2), widthMm);
-  };
   const addGridPoly = (x1, y1, x2, y2, widthMm) => {
     addPolyPoints(easyEdaProFootprintPoint(model, x1, y1), easyEdaProFootprintPoint(model, x2, y2), widthMm);
   };
@@ -2672,6 +2657,12 @@ function generateEasyEdaProFootprintRecords(model, context) {
     addGridPoly(right, bottom, left, bottom, widthMm);
     addGridPoly(left, bottom, left, top, widthMm);
   };
+  const addSilkText = (text, placement) => {
+    const payload = createEasyEdaProFootprintString(text, placement, zIndex);
+    if (!payload) return;
+    zIndex += 1;
+    add("STRING", `ie${elementId++}`, payload);
+  };
 
   if (model.includeOutline) {
     addGridRect(
@@ -2682,13 +2673,13 @@ function generateEasyEdaProFootprintRecords(model, context) {
       model.silkWidthMm
     );
   }
-  appendEasyEdaProSilkTextPolys(model.name, {
+  addSilkText(model.name, {
     ...getPartNameTextPlacement(model),
     anchor: "middle"
-  }, addCenteredPoly);
+  });
   model.pads.forEach((pad) => {
     const placement = getPinNameSilkPlacement(model, pad);
-    if (placement) appendEasyEdaProSilkTextPolys(pad.name, placement, addCenteredPoly);
+    if (placement) addSilkText(pad.name, placement);
   });
   model.silkscreen.forEach((item) => {
     if (item.type === "line") {
@@ -2699,13 +2690,13 @@ function generateEasyEdaProFootprintRecords(model, context) {
     }
     if (item.type === "text") {
       const local = footprintLocalPoint(model, item.xMm, item.yMm);
-      appendEasyEdaProSilkTextPolys(item.value, {
+      addSilkText(item.value, {
         x: local.x,
         y: local.y,
         size: 0.8,
         thickness: 0.15,
         anchor: "start"
-      }, addCenteredPoly);
+      });
     }
   });
 
