@@ -2427,7 +2427,7 @@ function generateEasyEdaProSymbolRecords(model, context) {
   addPartAttr("Name", model.name, { visible: false, fontSize: 196.85039, align: "CENTER_MIDDLE" });
   addPartAttr("Device", model.name, { visible: false, fontSize: 6.75 });
   addPartAttr("Designator", "J?", {
-    visible: true,
+    visible: false,
     x: 0,
     y: round(bodyBottom + 5, 5),
     fontSize: 3.93701,
@@ -2439,7 +2439,7 @@ function generateEasyEdaProSymbolRecords(model, context) {
     align: "CENTER_MIDDLE"
   });
   addPartAttr("Value", model.name, {
-    visible: false,
+    visible: true,
     x: 0,
     y: round(bodyTop - 5, 5),
     fontSize: 3.93701,
