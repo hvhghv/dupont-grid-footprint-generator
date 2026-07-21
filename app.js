@@ -2424,7 +2424,6 @@ function generateEasyEdaProSymbolRecords(model, context) {
   const addPartAttr = (key, value, options) => {
     add("ATTR", `ie${elementId++}`, createEasyEdaProSymbolAttr(partId, partId, key, value, zIndex++, options));
   };
-  addPartAttr("Name", model.name, { visible: false, fontSize: 196.85039, align: "CENTER_MIDDLE" });
   addPartAttr("Device", model.name, { visible: false, fontSize: 6.75 });
   addPartAttr("Designator", "J?", {
     visible: false,
@@ -2778,7 +2777,12 @@ function generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFo
       Symbol: includeSymbol ? context.symbolId : "",
       Footprint: includeFootprint ? context.footprintId : "",
       Description: "",
-      "Add into BOM": "yes"
+      "Add into BOM": "yes",
+      "Convert to PCB": "yes",
+      Name: model.name,
+      Designator: "J?",
+      Value: model.name,
+      UserDocLink: ""
     },
     images: [""],
     ticket: 1,
