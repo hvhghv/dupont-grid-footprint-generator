@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>杜邦座器件与封装生成器</title>
-  <link rel="stylesheet" href="styles.css?v=20260714-merge">
+  <link rel="stylesheet" href="styles.css?v=20260722-library-workspace">
 </head>
 <body>
   <header class="app-header">
@@ -17,6 +17,20 @@
 
   <main id="appLayout" class="layout">
     <aside class="panel setup-panel">
+      <h2>器件库</h2>
+      <label>
+        库名称
+        <input id="libraryNameInput" type="text" value="DUPONT_GRID" spellcheck="false">
+      </label>
+      <div id="deviceList" class="device-list" role="listbox" aria-label="库内器件"></div>
+      <div class="device-actions" role="group" aria-label="管理库内器件">
+        <button id="addDeviceButton" type="button" title="新建器件">+ 新建</button>
+        <button id="duplicateDeviceButton" type="button" title="复制当前器件">复制</button>
+        <button id="deleteDeviceButton" type="button" title="删除当前器件">删除</button>
+        <button id="moveDeviceUpButton" type="button" aria-label="上移当前器件" title="上移">&#8593;</button>
+        <button id="moveDeviceDownButton" type="button" aria-label="下移当前器件" title="下移">&#8595;</button>
+      </div>
+
       <h2>器件尺寸</h2>
       <label>
         器件名称
@@ -212,7 +226,12 @@
           导入项目 JSON
           <input id="projectFileInput" type="file" accept="application/json,.json">
         </label>
+        <label class="file-button button-grid-wide">
+          加载 elibz2 器件库
+          <input id="libraryFileInput" type="file" accept="application/zip,.elibz2">
+        </label>
       </div>
+      <div id="libraryImportStatus" class="import-status hidden" role="status"></div>
     </aside>
 
     <div class="column-resizer" data-resizer="left" role="separator" aria-label="调整左栏和中间栏宽度"></div>
@@ -313,6 +332,14 @@
     </aside>
   </main>
 
-  <script src="app.js?v=20260722-keep-upper-remove-lower"></script>
+  <script src="vendor/fflate.min.js?v=0.8.2"></script>
+  <script src="app.js?v=20260722-library-workspace"></script>
+  <script>
+    if (new URLSearchParams(location.search).has("run-tests")) {
+      const testScript = document.createElement("script");
+      testScript.src = "tests/browser-tests.js";
+      document.body.appendChild(testScript);
+    }
+  </script>
 </body>
 </html>

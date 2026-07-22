@@ -127,11 +127,21 @@ const EASYEDA_PRO_HALF_INACTIVE_LAYER_IDS = new Set([
 ]);
 
 const SYMBOL_SIDES = ["top", "bottom", "left", "right"];
-const CACHE_COOKIE_META = "dupont_grid_project_cache_meta";
-const CACHE_COOKIE_CHUNK_PREFIX = "dupont_grid_project_cache_";
-const CACHE_LOCAL_STORAGE_KEY = "dupont_grid_project_cache_v2";
+const WORKSPACE_FORMAT = "dupont-grid-workspace";
+const WORKSPACE_SCHEMA_VERSION = 1;
+const ELIBZ2_MANIFEST_FORMAT = "dupont-grid-footprint-generator";
+const ELIBZ2_MANIFEST_VERSION = 1;
+const GENERATOR_VERSION = "2026.07.22";
+const RUNNING_BROWSER_TESTS = new URLSearchParams(location.search).has("run-tests");
+const CACHE_COOKIE_META = "dupont_grid_workspace_cache_meta";
+const CACHE_COOKIE_CHUNK_PREFIX = "dupont_grid_workspace_cache_";
+const CACHE_LOCAL_STORAGE_KEY = "dupont_grid_workspace_v1";
+const LEGACY_CACHE_COOKIE_META = "dupont_grid_project_cache_meta";
+const LEGACY_CACHE_COOKIE_CHUNK_PREFIX = "dupont_grid_project_cache_";
+const LEGACY_CACHE_LOCAL_STORAGE_KEY = "dupont_grid_project_cache_v2";
 const CACHE_COOKIE_DAYS = 180;
 const CACHE_CHUNK_SIZE = 3500;
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const DEFAULT_LAYOUT_COLUMNS = { left: 300, center: 0, right: 300 };
 const MIN_LAYOUT_COLUMNS = { left: 240, center: 420, right: 260 };
 const PIN_NAME_SILK_POSITIONS = ["none", "top", "bottom", "left", "right"];
@@ -181,10 +191,21 @@ const EASYEDA_SILK_FONT = {
 };
 
 let state = createState(3, 8);
+let workspace = createWorkspace(state);
+state = workspace.devices[0].project;
 let cacheSaveTimer = null;
 
 const dom = {
   appLayout: document.querySelector("#appLayout"),
+  libraryName: document.querySelector("#libraryNameInput"),
+  deviceList: document.querySelector("#deviceList"),
+  addDevice: document.querySelector("#addDeviceButton"),
+  duplicateDevice: document.querySelector("#duplicateDeviceButton"),
+  deleteDevice: document.querySelector("#deleteDeviceButton"),
+  moveDeviceUp: document.querySelector("#moveDeviceUpButton"),
+  moveDeviceDown: document.querySelector("#moveDeviceDownButton"),
+  libraryFile: document.querySelector("#libraryFileInput"),
+  libraryImportStatus: document.querySelector("#libraryImportStatus"),
   partName: document.querySelector("#partName"),
   nameSilkFontSize: document.querySelector("#nameSilkFontSizeInput"),
   rows: document.querySelector("#rowsInput"),
@@ -297,6 +318,209 @@ function createState(rows, cols) {
   };
 }
 
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeLibraryName(value, fallback = "DUPONT_GRID") {
+  return String(value ?? "")
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "_")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 80) || fallback;
+}
+
+function normalizeEasyEdaProId(value, seed) {
+  const text = String(value ?? "").toLowerCase();
+  return /^[0-9a-f]{32}$/.test(text) ? text : createEasyEdaProId(seed);
+}
+
+function normalizeEasyEdaProClientId(value, seed) {
+  const text = String(value ?? "").toLowerCase();
+  return /^[0-9a-f]{16}$/.test(text) ? text : createEasyEdaProId(seed).slice(0, 16);
+}
+
+function createProfessionalIdentity(source = {}, seed = "device") {
+  const values = source || {};
+  const now = Date.now();
+  return {
+    deviceId: normalizeEasyEdaProId(values.deviceId, `${seed}:device`),
+    symbolId: normalizeEasyEdaProId(values.symbolId, `${seed}:symbol`),
+    footprintId: normalizeEasyEdaProId(values.footprintId, `${seed}:footprint`),
+    symbolClient: normalizeEasyEdaProClientId(values.symbolClient, `${seed}:symbol-client`),
+    footprintClient: normalizeEasyEdaProClientId(values.footprintClient, `${seed}:footprint-client`),
+    createTime: Number.isFinite(Number(values.createTime)) ? Number(values.createTime) : now
+  };
+}
+
+function createWorkspaceDevice(project, options = {}) {
+  const normalizedProject = normalizeProjectState(project || createState(3, 8));
+  const editorId = normalizeEasyEdaProId(options.editorId, `${normalizedProject.partName}:editor`);
+  return {
+    editorId,
+    source: ["new", "elibz2", "legacy"].includes(options.source) ? options.source : "new",
+    project: normalizedProject,
+    professional: createProfessionalIdentity(options.professional, editorId)
+  };
+}
+
+function createWorkspace(project = createState(3, 8), options = {}) {
+  const now = Date.now();
+  const device = createWorkspaceDevice(project, options.device);
+  const librarySource = options.library || {};
+  return {
+    format: WORKSPACE_FORMAT,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    library: {
+      id: normalizeEasyEdaProId(librarySource.id, `${device.project.partName}:library`),
+      name: normalizeLibraryName(librarySource.name, device.project.partName),
+      creatorId: normalizeEasyEdaProId(librarySource.creatorId, `${device.project.partName}:creator`),
+      createdAt: Number.isFinite(Number(librarySource.createdAt)) ? Number(librarySource.createdAt) : now,
+      updatedAt: Number.isFinite(Number(librarySource.updatedAt)) ? Number(librarySource.updatedAt) : now
+    },
+    activeDeviceId: device.editorId,
+    devices: [device],
+    ui: {
+      layoutColumns: createLayoutColumns(options.ui?.layoutColumns || project.layoutColumns)
+    }
+  };
+}
+
+function getActiveWorkspaceDevice() {
+  return workspace.devices.find((device) => device.editorId === workspace.activeDeviceId) || workspace.devices[0] || null;
+}
+
+function commitActiveDevice() {
+  const active = getActiveWorkspaceDevice();
+  if (!active) return;
+  if (dom.partName) readSettings();
+  active.project = state;
+  workspace.ui.layoutColumns = createLayoutColumns(workspace.ui.layoutColumns || state.layoutColumns);
+  workspace.library.updatedAt = Date.now();
+}
+
+function getUniqueDeviceName(baseName, excludedEditorId = "") {
+  const base = normalizeName(baseName || "DUPONT_GRID");
+  const used = new Set(workspace.devices
+    .filter((device) => device.editorId !== excludedEditorId)
+    .map((device) => normalizeName(device.project.partName).toLowerCase()));
+  if (!used.has(base.toLowerCase())) return base;
+  let index = 2;
+  while (used.has(`${base}_${index}`.toLowerCase())) index += 1;
+  return `${base}_${index}`;
+}
+
+function activateWorkspaceDevice(editorId) {
+  const target = workspace.devices.find((device) => device.editorId === editorId);
+  if (!target || target.editorId === workspace.activeDeviceId) return;
+  commitActiveDevice();
+  workspace.activeDeviceId = target.editorId;
+  state = normalizeProjectState(target.project);
+  target.project = state;
+  syncInputsFromState();
+  render();
+}
+
+function addWorkspaceDevice() {
+  commitActiveDevice();
+  const project = createState(3, 8);
+  project.partName = getUniqueDeviceName("DUPONT_GRID");
+  const device = createWorkspaceDevice(project);
+  workspace.devices.push(device);
+  workspace.activeDeviceId = device.editorId;
+  state = device.project;
+  syncInputsFromState();
+  render();
+}
+
+function duplicateActiveWorkspaceDevice() {
+  commitActiveDevice();
+  const active = getActiveWorkspaceDevice();
+  if (!active) return;
+  const project = cloneData(active.project);
+  project.partName = getUniqueDeviceName(`${project.partName}_COPY`);
+  project.selectedKey = null;
+  project.drawStart = null;
+  project.mode = "select";
+  const device = createWorkspaceDevice(project, { source: "new" });
+  const activeIndex = workspace.devices.indexOf(active);
+  workspace.devices.splice(activeIndex + 1, 0, device);
+  workspace.activeDeviceId = device.editorId;
+  state = device.project;
+  syncInputsFromState();
+  render();
+}
+
+function deleteActiveWorkspaceDevice() {
+  commitActiveDevice();
+  const active = getActiveWorkspaceDevice();
+  if (!active) return;
+  if (!confirm(`确定删除器件 ${active.project.partName}？`)) return;
+  const index = workspace.devices.indexOf(active);
+  workspace.devices.splice(index, 1);
+  if (!workspace.devices.length) {
+    const project = createState(3, 8);
+    project.partName = "DUPONT_GRID";
+    workspace.devices.push(createWorkspaceDevice(project));
+  }
+  const next = workspace.devices[Math.min(index, workspace.devices.length - 1)];
+  workspace.activeDeviceId = next.editorId;
+  state = normalizeProjectState(next.project);
+  next.project = state;
+  syncInputsFromState();
+  render();
+}
+
+function moveActiveWorkspaceDevice(offset) {
+  commitActiveDevice();
+  const active = getActiveWorkspaceDevice();
+  if (!active) return;
+  const index = workspace.devices.indexOf(active);
+  const nextIndex = index + offset;
+  if (nextIndex < 0 || nextIndex >= workspace.devices.length) return;
+  workspace.devices.splice(index, 1);
+  workspace.devices.splice(nextIndex, 0, active);
+  renderDeviceList();
+  scheduleProjectCacheSave();
+}
+
+function renderDeviceList() {
+  if (!dom.deviceList) return;
+  const duplicateNames = getDuplicateDeviceNames(workspace.devices);
+  dom.deviceList.innerHTML = "";
+  workspace.devices.forEach((device) => {
+    const project = device.editorId === workspace.activeDeviceId ? state : device.project;
+    const validation = validateProjectState(project);
+    const activePins = Array.isArray(project.cells) ? project.cells.filter((cell) => cell.enabled).length : 0;
+    const duplicate = duplicateNames.has(normalizeName(project.partName).toLowerCase());
+    const invalid = duplicate || validation.level === "danger" || !activePins;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "device-list-item";
+    button.classList.toggle("active", device.editorId === workspace.activeDeviceId);
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", device.editorId === workspace.activeDeviceId ? "true" : "false");
+    button.dataset.deviceId = device.editorId;
+    const name = document.createElement("span");
+    name.className = "device-list-name";
+    name.textContent = project.partName;
+    const meta = document.createElement("span");
+    meta.className = `device-list-meta${invalid ? " invalid" : ""}`;
+    meta.textContent = duplicate ? "名称重复" : invalid ? "需检查" : `${activePins} 引脚`;
+    button.append(name, meta);
+    dom.deviceList.appendChild(button);
+  });
+  const activeIndex = workspace.devices.findIndex((device) => device.editorId === workspace.activeDeviceId);
+  dom.moveDeviceUp.disabled = activeIndex <= 0;
+  dom.moveDeviceDown.disabled = activeIndex < 0 || activeIndex >= workspace.devices.length - 1;
+}
+
+function showLibraryImportStatus(message, level = "ok") {
+  if (!dom.libraryImportStatus) return;
+  dom.libraryImportStatus.textContent = message;
+  dom.libraryImportStatus.className = `import-status${level === "ok" ? "" : ` ${level}`}`;
+}
+
 function createGridCell(row, col, source = {}) {
   const values = source || {};
   return {
@@ -367,6 +591,7 @@ function selectedCell() {
 }
 
 function syncInputsFromState() {
+  dom.libraryName.value = workspace.library.name;
   dom.partName.value = state.partName;
   dom.nameSilkFontSize.value = state.nameSilkFontSizeMm;
   dom.rows.value = state.rows;
@@ -679,31 +904,34 @@ function normalizeCellPinNameSilkOffset(value) {
   return normalizePinNameSilkOffset(value);
 }
 
-function getCellPinNameSilkPosition(cell) {
-  return normalizePinNameSilkPosition(cell.pinNameSilkPosition || state.pinNameSilkPosition, state.pinNameSilkPosition);
+function getCellPinNameSilkPosition(cell, project = state) {
+  return normalizePinNameSilkPosition(cell.pinNameSilkPosition || project.pinNameSilkPosition, project.pinNameSilkPosition);
 }
 
-function getCellPinNameSilkFontSize(cell) {
+function getCellPinNameSilkFontSize(cell, project = state) {
   return cell.pinNameSilkFontSizeMm > 0
     ? normalizePinNameSilkFontSize(cell.pinNameSilkFontSizeMm)
-    : normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm);
+    : normalizePinNameSilkFontSize(project.pinNameSilkFontSizeMm);
 }
 
-function getCellPinNameSilkOffsetX(cell) {
+function getCellPinNameSilkOffsetX(cell, project = state) {
   return cell.pinNameSilkOffsetXMm === null || cell.pinNameSilkOffsetXMm === undefined
-    ? normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm)
+    ? normalizePinNameSilkOffset(project.pinNameSilkOffsetXMm)
     : normalizePinNameSilkOffset(cell.pinNameSilkOffsetXMm);
 }
 
-function getCellPinNameSilkOffsetY(cell) {
+function getCellPinNameSilkOffsetY(cell, project = state) {
   return cell.pinNameSilkOffsetYMm === null || cell.pinNameSilkOffsetYMm === undefined
-    ? normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm)
+    ? normalizePinNameSilkOffset(project.pinNameSilkOffsetYMm)
     : normalizePinNameSilkOffset(cell.pinNameSilkOffsetYMm);
 }
 
 function render() {
   readSettings();
+  const active = getActiveWorkspaceDevice();
+  if (active) active.project = state;
   applyLayoutColumns();
+  renderDeviceList();
   renderGrid();
   renderSilkscreen();
   renderInspector();
@@ -726,7 +954,7 @@ function renderSymbolOptions() {
 
 function applyLayoutColumns() {
   if (!dom.appLayout) return;
-  const columns = createLayoutColumns(state.layoutColumns);
+  const columns = createLayoutColumns(workspace.ui.layoutColumns);
   dom.appLayout.style.setProperty("--layout-left", `${round(columns.left, 1)}px`);
   if (columns.center > 0) {
     dom.appLayout.style.setProperty("--layout-center", `${round(columns.center, 1)}px`);
@@ -829,7 +1057,7 @@ function renderStats() {
   dom.totalCells.textContent = String(state.rows * state.cols);
   dom.activeCells.textContent = String(active.length);
   dom.silkStat.textContent = String(state.silkscreen.length + (state.includeOutline ? 1 : 0));
-  dom.projectStatus.textContent = active.length ? `${active.length} 个焊孔` : "未生成";
+  dom.projectStatus.textContent = `${workspace.devices.length} 个器件 / ${active.length} 个焊孔`;
 }
 
 function renderSymbolPreview() {
@@ -1493,14 +1721,18 @@ function nextPinNumber() {
   return String(index);
 }
 
-function getActiveCells() {
-  return state.cells.filter((cell) => cell.enabled).sort((a, b) => a.row - b.row || a.col - b.col);
+function getActiveCells(project = state) {
+  return project.cells.filter((cell) => cell.enabled).sort((a, b) => a.row - b.row || a.col - b.col);
 }
 
 function validateModel() {
-  const active = getActiveCells();
+  return validateProjectState(state);
+}
+
+function validateProjectState(project) {
+  const active = getActiveCells(project);
   if (!active.length) return { level: "warn", message: "至少启用一个格子后再导出。" };
-  if (state.drillMm >= state.padMm) return { level: "danger", message: "钻孔直径必须小于焊盘直径。" };
+  if (project.drillMm >= project.padMm) return { level: "danger", message: "钻孔直径必须小于焊盘直径。" };
   const emptyNumbers = active.filter((cell) => !String(cell.pinNumber).trim());
   if (emptyNumbers.length) return { level: "warn", message: "存在未编号引脚，导出时会按行列顺序自动补号。" };
   const seen = new Set();
@@ -1517,7 +1749,11 @@ function validateModel() {
 
 function buildModel() {
   readSettings();
-  const active = getActiveCells();
+  return buildModelFromProject(state);
+}
+
+function buildModelFromProject(project) {
+  const active = getActiveCells(project);
   const used = new Set();
   let autoIndex = 1;
   const pads = active.map((cell) => {
@@ -1532,39 +1768,39 @@ function buildModel() {
       col: cell.col,
       number,
       name: sanitizeField(cell.pinName || `PIN_${number}`),
-      pinNameSilkPosition: getCellPinNameSilkPosition(cell),
-      pinNameSilkFontSizeMm: getCellPinNameSilkFontSize(cell),
-      pinNameSilkOffsetXMm: getCellPinNameSilkOffsetX(cell),
-      pinNameSilkOffsetYMm: getCellPinNameSilkOffsetY(cell)
+      pinNameSilkPosition: getCellPinNameSilkPosition(cell, project),
+      pinNameSilkFontSizeMm: getCellPinNameSilkFontSize(cell, project),
+      pinNameSilkOffsetXMm: getCellPinNameSilkOffsetX(cell, project),
+      pinNameSilkOffsetYMm: getCellPinNameSilkOffsetY(cell, project)
     };
   });
   const includePinNameSilk = pads.some((pad) => pad.pinNameSilkPosition !== "none");
 
   return {
-    name: state.partName,
-    rows: state.rows,
-    cols: state.cols,
-    pitchMm: state.pitchMm,
-    padMm: state.padMm,
-    drillMm: state.drillMm,
-    silkWidthMm: state.silkWidthMm,
-    nameSilkFontSizeMm: state.nameSilkFontSizeMm,
-    pinNameSilkFontSizeMm: state.pinNameSilkFontSizeMm,
-    pinNameSilkOffsetXMm: state.pinNameSilkOffsetXMm,
-    pinNameSilkOffsetYMm: state.pinNameSilkOffsetYMm,
-    includeOutline: state.includeOutline,
+    name: project.partName,
+    rows: project.rows,
+    cols: project.cols,
+    pitchMm: project.pitchMm,
+    padMm: project.padMm,
+    drillMm: project.drillMm,
+    silkWidthMm: project.silkWidthMm,
+    nameSilkFontSizeMm: project.nameSilkFontSizeMm,
+    pinNameSilkFontSizeMm: project.pinNameSilkFontSizeMm,
+    pinNameSilkOffsetXMm: project.pinNameSilkOffsetXMm,
+    pinNameSilkOffsetYMm: project.pinNameSilkOffsetYMm,
+    includeOutline: project.includeOutline,
     includePinNameSilk,
-    pinNameSilkPosition: state.pinNameSilkPosition,
-    outlineMarginMm: state.outlineMarginMm,
-    outlineCustomMargins: state.outlineCustomMargins,
-    outlineMargins: createOutlineMargins(state.outlineMargins, state.outlineMarginMm),
-    symbolRows: state.symbolRows,
-    symbolPinsPerRow: state.symbolPinsPerRow,
-    symbolMirror: state.symbolMirror,
-    symbolFlip: state.symbolFlip,
-    symbolSidePins: createSymbolSidePins(state.symbolSidePins),
+    pinNameSilkPosition: project.pinNameSilkPosition,
+    outlineMarginMm: project.outlineMarginMm,
+    outlineCustomMargins: project.outlineCustomMargins,
+    outlineMargins: createOutlineMargins(project.outlineMargins, project.outlineMarginMm),
+    symbolRows: project.symbolRows,
+    symbolPinsPerRow: project.symbolPinsPerRow,
+    symbolMirror: project.symbolMirror,
+    symbolFlip: project.symbolFlip,
+    symbolSidePins: createSymbolSidePins(project.symbolSidePins),
     pads,
-    silkscreen: state.silkscreen.map((item) => ({ ...item }))
+    silkscreen: project.silkscreen.map((item) => ({ ...item }))
   };
 }
 
@@ -1587,6 +1823,51 @@ function assertExportable() {
     return false;
   }
   return true;
+}
+
+function getDuplicateDeviceNames(devices) {
+  const counts = new Map();
+  devices.forEach((device) => {
+    const name = normalizeName(device.project.partName).toLowerCase();
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([name]) => name));
+}
+
+function assertWorkspaceIdentityUniqueness(value) {
+  const ids = new Set();
+  value.devices.forEach((device) => {
+    const identityIds = [
+      device.editorId,
+      device.professional.deviceId,
+      device.professional.symbolId,
+      device.professional.footprintId
+    ];
+    identityIds.forEach((id) => {
+      if (ids.has(id)) throw new Error(`器件库中存在重复标识：${id}`);
+      ids.add(id);
+    });
+  });
+}
+
+function validateWorkspaceForExport() {
+  commitActiveDevice();
+  const duplicateNames = getDuplicateDeviceNames(workspace.devices);
+  if (duplicateNames.size) {
+    return { ok: false, message: `器件名称不能重复：${Array.from(duplicateNames).join(", ")}` };
+  }
+  try {
+    assertWorkspaceIdentityUniqueness(workspace);
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+  for (const device of workspace.devices) {
+    const result = validateProjectState(device.project);
+    if (result.level === "danger" || !getActiveCells(device.project).length) {
+      return { ok: false, message: `${device.project.partName}：${result.message}` };
+    }
+  }
+  return { ok: true, message: "" };
 }
 
 function setAllCells(enabled) {
@@ -2215,17 +2496,18 @@ function createEasyEdaProId(seed = "") {
   return createKicadUuid(`${seed}:${Date.now()}:${Math.random()}`).replace(/-/g, "");
 }
 
-function createEasyEdaProContext(model) {
-  const timestamp = Date.now();
+function createEasyEdaProContext(model, professional = {}, library = {}, timestamp = Date.now()) {
+  const identity = createProfessionalIdentity(professional, model.name);
   return {
     timestamp,
     version: String(timestamp),
-    creatorId: createEasyEdaProId(`${model.name}:creator`),
-    deviceId: createEasyEdaProId(`${model.name}:device`),
-    symbolId: createEasyEdaProId(`${model.name}:symbol`),
-    footprintId: createEasyEdaProId(`${model.name}:footprint`),
-    symbolClient: createEasyEdaProId(`${model.name}:symbol-client`).slice(0, 16),
-    footprintClient: createEasyEdaProId(`${model.name}:footprint-client`).slice(0, 16),
+    createTime: identity.createTime,
+    creatorId: normalizeEasyEdaProId(library.creatorId, `${model.name}:creator`),
+    deviceId: identity.deviceId,
+    symbolId: identity.symbolId,
+    footprintId: identity.footprintId,
+    symbolClient: identity.symbolClient,
+    footprintClient: identity.footprintClient,
     geometryClient: "chameleon-client"
   };
 }
@@ -2757,7 +3039,7 @@ function createEasyEdaProIndexEntry(context, uuid, model, docType) {
     path: "1234",
     ticket: 1,
     updateTime: context.timestamp,
-    createTime: context.timestamp,
+    createTime: context.createTime,
     title: model.name.toLowerCase(),
     description: "",
     display_title: model.name,
@@ -2787,7 +3069,7 @@ function generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFo
     images: [""],
     ticket: 1,
     updateTime: context.timestamp,
-    createTime: context.timestamp,
+    createTime: context.createTime,
     title: model.name.toLowerCase(),
     description: "",
     display_title: model.name,
@@ -2815,28 +3097,61 @@ function generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFo
   return index;
 }
 
-function generateEasyEdaProPackage(model, mode) {
+async function generateEasyEdaProLibraryPackage(value, mode) {
   const includeSymbol = mode !== "footprint";
   const includeFootprint = mode !== "symbol";
   const includeDevice = mode === "combined";
-  const context = createEasyEdaProContext(model);
+  const payload = value === workspace ? createProjectPayload() : cloneData(value);
+  const timestamp = Date.now();
   const suffix = mode === "symbol" ? "_Symbol" : mode === "footprint" ? "_Footprint" : "";
-  const archiveStem = `${model.name}${suffix}`;
+  const archiveStem = `${normalizeLibraryName(payload.library.name)}${suffix}`;
   const indexName = mode === "symbol" ? "symbol2.json" : mode === "footprint" ? "footprint2.json" : "device2.json";
   let library = "";
-  if (includeSymbol) library += generateEasyEdaProSymbolRecords(model, context);
-  if (includeFootprint) library += generateEasyEdaProFootprintRecords(model, context);
+  const index = { devices: {}, symbols: {}, footprints: {}, panelLibs: {} };
+  payload.devices.forEach((device) => {
+    const model = buildModelFromProject(device.project);
+    const context = createEasyEdaProContext(model, device.professional, payload.library, timestamp);
+    if (includeSymbol) library += generateEasyEdaProSymbolRecords(model, context);
+    if (includeFootprint) library += generateEasyEdaProFootprintRecords(model, context);
+    const deviceIndex = generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFootprint, includeDevice);
+    Object.assign(index.devices, deviceIndex.devices);
+    Object.assign(index.symbols, deviceIndex.symbols);
+    Object.assign(index.footprints, deviceIndex.footprints);
+  });
   library = library.replace(/\|\n$/, "");
+  const workspaceJson = JSON.stringify(payload);
+  const manifest = {
+    format: ELIBZ2_MANIFEST_FORMAT,
+    manifestVersion: ELIBZ2_MANIFEST_VERSION,
+    generatorVersion: GENERATOR_VERSION,
+    packageType: mode,
+    generatedAt: timestamp,
+    payloadSha256: await sha256Hex(workspaceJson),
+    workspace: payload
+  };
   return {
     filename: `${archiveStem}.elibz2`,
     files: [
       { name: `${archiveStem}.elibu`, content: library },
       {
         name: indexName,
-        content: JSON.stringify(generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFootprint, includeDevice), null, 2)
+        content: JSON.stringify(index, null, 2)
+      },
+      {
+        name: "dupont-grid-project.json",
+        content: JSON.stringify(manifest, null, 2)
       }
     ]
   };
+}
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+  return `crc32-${crc32(bytes).toString(16).padStart(8, "0")}`;
 }
 
 function generateKicadFootprint(model) {
@@ -3104,14 +3419,25 @@ function generateKicadSymLibTable(model) {
   return `(sym_lib_table\n  (lib (name "${escapeKicad(model.name)}")(type "KiCad")(uri "\${KIPRJMOD}/${escapeKicad(model.name)}.kicad_sym")(options "")(descr "Generated by dupont-grid-local-web"))\n)\n`;
 }
 
-function exportFile(kind) {
+async function exportFile(kind) {
+  if (kind === "lceda-pro-combined" || kind === "lceda-pro-symbol" || kind === "lceda-pro-footprint") {
+    const validation = validateWorkspaceForExport();
+    renderDeviceList();
+    if (!validation.ok) {
+      alert(validation.message);
+      return;
+    }
+    const mode = kind === "lceda-pro-symbol" ? "symbol" : kind === "lceda-pro-footprint" ? "footprint" : "combined";
+    try {
+      const packageData = await generateEasyEdaProLibraryPackage(workspace, mode);
+      downloadBlob(packageData.filename, createZipBlob(packageData.files), "application/zip");
+    } catch (error) {
+      alert(`器件库无法导出：${error.message}`);
+    }
+    return;
+  }
   if (!assertExportable()) return;
   const model = buildModel();
-  if (kind === "lceda-pro-combined" || kind === "lceda-pro-symbol" || kind === "lceda-pro-footprint") {
-    const mode = kind === "lceda-pro-symbol" ? "symbol" : kind === "lceda-pro-footprint" ? "footprint" : "combined";
-    const packageData = generateEasyEdaProPackage(model, mode);
-    downloadBlob(packageData.filename, createZipBlob(packageData.files), "application/zip");
-  }
   if (kind === "kicad-zip") {
     const files = [
       {
@@ -3286,19 +3612,464 @@ const CRC32_TABLE = (() => {
   return table;
 })();
 
-function createProjectPayload() {
-  readSettings();
+function decodeUtf8(bytes) {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function getZipEntry(entries, filename) {
+  const target = filename.toLowerCase();
+  return Array.from(entries.entries()).find(([name]) => name.toLowerCase().split("/").pop() === target)?.[1] || null;
+}
+
+function getElibuEntry(entries) {
+  return Array.from(entries.entries()).find(([name]) => name.toLowerCase().endsWith(".elibu")) || null;
+}
+
+function parseEasyEdaProRecords(text) {
+  const records = [];
+  String(text).split(/\|\r?\n/).forEach((line, index) => {
+    const value = line.trim();
+    if (!value) return;
+    const separator = value.indexOf("||");
+    if (separator < 0) throw new Error(`elibu 第 ${index + 1} 条记录缺少分隔符`);
+    try {
+      records.push({
+        header: JSON.parse(value.slice(0, separator)),
+        payload: JSON.parse(value.slice(separator + 2))
+      });
+    } catch (error) {
+      throw new Error(`elibu 第 ${index + 1} 条记录无法解析：${error.message}`);
+    }
+  });
+  if (!records.length) throw new Error("elibu 中没有可读取的记录");
+  return records;
+}
+
+function groupEasyEdaProRecordsByDocument(records) {
+  const groups = new Map();
+  let currentUuid = "";
+  records.forEach((record) => {
+    if (record.header?.type === "DOCHEAD" && record.payload?.uuid) {
+      currentUuid = String(record.payload.uuid).toLowerCase();
+    }
+    if (!currentUuid) return;
+    if (!groups.has(currentUuid)) groups.set(currentUuid, []);
+    groups.get(currentUuid).push(record);
+  });
+  return groups;
+}
+
+function parseJsonZipEntry(entries, filename, required = true) {
+  const bytes = getZipEntry(entries, filename);
+  if (!bytes) {
+    if (required) throw new Error(`压缩包缺少 ${filename}`);
+    return null;
+  }
+  try {
+    return JSON.parse(decodeUtf8(bytes));
+  } catch (error) {
+    throw new Error(`${filename} 无法解析：${error.message}`);
+  }
+}
+
+function validateManifestWorkspaceReferences(manifest, index, documentGroups) {
+  const mode = manifest.packageType;
+  if (!["combined", "symbol", "footprint"].includes(mode)) throw new Error("项目清单的库类型无效");
+  const source = manifest.workspace;
+  if (!source || !Array.isArray(source.devices) || !source.devices.length) throw new Error("项目清单没有器件数据");
+  source.devices.forEach((device) => {
+    const name = device.project?.partName || "未命名器件";
+    const identity = device.professional || {};
+    if (mode === "combined") {
+      const indexedDevice = index.devices?.[identity.deviceId];
+      if (!indexedDevice) throw new Error(`${name} 缺少 device2 索引`);
+      if (indexedDevice.attributes?.Symbol !== identity.symbolId) throw new Error(`${name} 的符号 UUID 关联不一致`);
+      if (indexedDevice.attributes?.Footprint !== identity.footprintId) throw new Error(`${name} 的封装 UUID 关联不一致`);
+    }
+    if (mode !== "footprint") {
+      if (!index.symbols?.[identity.symbolId]) throw new Error(`${name} 缺少符号索引`);
+      if (!documentGroups.has(String(identity.symbolId).toLowerCase())) throw new Error(`${name} 缺少符号记录`);
+    }
+    if (mode !== "symbol") {
+      if (!index.footprints?.[identity.footprintId]) throw new Error(`${name} 缺少封装索引`);
+      if (!documentGroups.has(String(identity.footprintId).toLowerCase())) throw new Error(`${name} 缺少封装记录`);
+    }
+  });
+}
+
+async function importManifestWorkspace(entries, records) {
+  const manifest = parseJsonZipEntry(entries, "dupont-grid-project.json");
+  if (manifest.format !== ELIBZ2_MANIFEST_FORMAT) throw new Error("不是本页面生成的器件库");
+  if (Number(manifest.manifestVersion || 0) > ELIBZ2_MANIFEST_VERSION) {
+    throw new Error(`项目清单版本 ${manifest.manifestVersion} 高于当前支持的版本`);
+  }
+  const workspaceJson = JSON.stringify(manifest.workspace);
+  if (manifest.payloadSha256) {
+    const actualHash = manifest.payloadSha256.startsWith("crc32-")
+      ? `crc32-${crc32(new TextEncoder().encode(workspaceJson)).toString(16).padStart(8, "0")}`
+      : await sha256Hex(workspaceJson);
+    if (actualHash !== manifest.payloadSha256) throw new Error("项目清单校验失败，文件可能已经损坏");
+  }
+  const indexName = manifest.packageType === "symbol"
+    ? "symbol2.json"
+    : manifest.packageType === "footprint" ? "footprint2.json" : "device2.json";
+  const index = parseJsonZipEntry(entries, indexName);
+  validateManifestWorkspaceReferences(manifest, index, groupEasyEdaProRecordsByDocument(records));
+  const imported = normalizeWorkspacePayload(manifest.workspace);
+  imported.devices.forEach((device) => {
+    device.source = "elibz2";
+  });
   return {
-    version: 5,
-    ...state,
-    drawStart: null,
-    mode: "select"
+    workspace: imported,
+    warning: ""
   };
+}
+
+async function readElibz2(file) {
+  if (!file) return null;
+  if (file.size > MAX_IMPORT_BYTES) throw new Error("文件超过 50 MB，已拒绝加载");
+  if (!globalThis.fflate?.unzipSync) throw new Error("ZIP 读取组件未正确加载");
+  const archive = new Uint8Array(await file.arrayBuffer());
+  let unzipped;
+  try {
+    unzipped = globalThis.fflate.unzipSync(archive);
+  } catch (error) {
+    throw new Error(`ZIP 无法解压：${error.message}`);
+  }
+  const expandedBytes = Object.values(unzipped).reduce((sum, bytes) => sum + bytes.length, 0);
+  if (expandedBytes > MAX_IMPORT_BYTES * 2) throw new Error("ZIP 解压后的内容超过 100 MB，已拒绝加载");
+  const entries = new Map(Object.entries(unzipped).map(([name, bytes]) => [name.replace(/\\/g, "/"), bytes]));
+  const elibuEntry = getElibuEntry(entries);
+  if (!elibuEntry) throw new Error("压缩包缺少 .elibu 文件");
+  const records = parseEasyEdaProRecords(decodeUtf8(elibuEntry[1]));
+  if (getZipEntry(entries, "dupont-grid-project.json")) {
+    return importManifestWorkspace(entries, records);
+  }
+  return recoverLegacyElibz2(entries, records, elibuEntry[0]);
+}
+
+async function loadElibz2(file) {
+  if (!file) return;
+  showLibraryImportStatus("正在读取器件库...");
+  try {
+    const result = await readElibz2(file);
+    if (!result) return;
+    const names = result.workspace.devices.map((device) => device.project.partName).join("、");
+    if (!confirm(`加载后将替换当前工作区。\n\n器件：${names}\n\n是否继续？`)) {
+      showLibraryImportStatus("已取消加载。", "warning");
+      return;
+    }
+    workspace = result.workspace;
+    const active = getActiveWorkspaceDevice();
+    state = active.project;
+    syncInputsFromState();
+    render();
+    saveProjectCache();
+    showLibraryImportStatus(
+      result.warning || `已加载 ${workspace.devices.length} 个器件。`,
+      result.warning ? "warning" : "ok"
+    );
+  } catch (error) {
+    showLibraryImportStatus(`加载失败：${error.message}`, "error");
+    alert(`elibz2 无法加载：${error.message}`);
+  } finally {
+    dom.libraryFile.value = "";
+  }
+}
+
+function milToMm(value) {
+  return Number(value) / 39.37007874015748;
+}
+
+function getDocumentHead(records) {
+  return records.find((record) => record.header?.type === "DOCHEAD")?.payload || {};
+}
+
+function assertLegacyGeneratorFingerprint(symbolRecords, footprintRecords, name) {
+  const symbolTypes = new Set(symbolRecords.map((record) => record.header?.type));
+  const footprintTypes = new Set(footprintRecords.map((record) => record.header?.type));
+  const layerCount = footprintRecords.filter((record) => record.header?.type === "LAYER").length;
+  const physicalLayerCount = footprintRecords.filter((record) => record.header?.type === "LAYER_PHYS").length;
+  const geometryClients = [...symbolRecords, ...footprintRecords]
+    .filter((record) => ["PIN", "PAD", "RECT", "POLY", "STRING"].includes(record.header?.type))
+    .map((record) => record.header?.client)
+    .filter(Boolean);
+  const hasExpectedTypes = ["META", "PART", "RECT", "PIN", "ATTR"].every((type) => symbolTypes.has(type))
+    && ["META", "PAD", "ATTR", "NET", "LAYER", "LAYER_PHYS"].every((type) => footprintTypes.has(type));
+  const hasExpectedClients = geometryClients.length > 0 && geometryClients.every((client) => client === "chameleon-client");
+  const symbolHead = getDocumentHead(symbolRecords);
+  const footprintHead = getDocumentHead(footprintRecords);
+  const hasExpectedHeads = symbolHead.docType === "SYMBOL"
+    && footprintHead.docType === "FOOTPRINT"
+    && symbolHead.editVersion === EASYEDA_PRO_EDIT_VERSION
+    && footprintHead.editVersion === EASYEDA_PRO_EDIT_VERSION;
+  if (!hasExpectedTypes
+    || !hasExpectedClients
+    || !hasExpectedHeads
+    || layerCount !== EASYEDA_PRO_LAYERS.length
+    || physicalLayerCount !== EASYEDA_PRO_PHYSICAL_LAYERS.length) {
+    throw new Error(`${name} 不符合本页面旧版器件的结构特征`);
+  }
+}
+
+function smallestPositiveStep(values) {
+  const unique = Array.from(new Set(values.map((value) => round(Number(value), 5)))).sort((a, b) => a - b);
+  let step = Infinity;
+  for (let index = 1; index < unique.length; index += 1) {
+    const difference = unique[index] - unique[index - 1];
+    if (difference > 0.01) step = Math.min(step, difference);
+  }
+  return Number.isFinite(step) ? step : 0;
+}
+
+function getPolySegment(record) {
+  const path = record?.payload?.path;
+  if (!Array.isArray(path) || path.length < 5 || path[2] !== "L") return null;
+  return {
+    x1: Number(path[0]),
+    y1: Number(path[1]),
+    x2: Number(path[3]),
+    y2: Number(path[4])
+  };
+}
+
+function getClosedRectangleBounds(records) {
+  if (!Array.isArray(records) || records.length !== 4) return null;
+  const segments = records.map(getPolySegment);
+  if (segments.some((segment) => !segment)) return null;
+  const xs = Array.from(new Set(segments.flatMap((segment) => [round(segment.x1, 5), round(segment.x2, 5)])));
+  const ys = Array.from(new Set(segments.flatMap((segment) => [round(segment.y1, 5), round(segment.y2, 5)])));
+  const axisAligned = segments.every((segment) => Math.abs(segment.x1 - segment.x2) < 0.01 || Math.abs(segment.y1 - segment.y2) < 0.01);
+  if (!axisAligned || xs.length !== 2 || ys.length !== 2) return null;
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys)
+  };
+}
+
+function recoverLegacyPinNames(symbolRecords) {
+  const byParent = new Map();
+  symbolRecords.filter((record) => record.header?.type === "ATTR").forEach((record) => {
+    const key = record.payload?.key;
+    if (key !== "Pin Name" && key !== "Pin Number") return;
+    const parentId = String(record.payload?.parentId || "");
+    if (!byParent.has(parentId)) byParent.set(parentId, {});
+    if (key === "Pin Name") byParent.get(parentId).name = String(record.payload?.value || "");
+    if (key === "Pin Number") byParent.get(parentId).number = String(record.payload?.value || "");
+  });
+  const names = new Map();
+  byParent.forEach((pin) => {
+    if (pin.number) names.set(pin.number, pin.name || `PIN_${pin.number}`);
+  });
+  return names;
+}
+
+function recoverLegacySymbolRows(symbolRecords) {
+  const rotations = new Set(symbolRecords
+    .filter((record) => record.header?.type === "PIN")
+    .map((record) => Number(record.payload?.rotation))
+    .filter(Number.isFinite));
+  if (rotations.size >= 3) return 4;
+  if (rotations.size >= 2) return 2;
+  return 1;
+}
+
+function recoverLegacyProject(name, symbolRecords, footprintRecords) {
+  const padRecords = footprintRecords.filter((record) => record.header?.type === "PAD");
+  if (!padRecords.length) throw new Error(`${name} 没有焊盘记录`);
+  const xs = padRecords.map((record) => Number(record.payload.centerX));
+  const ys = padRecords.map((record) => Number(record.payload.centerY));
+  const steps = [smallestPositiveStep(xs), smallestPositiveStep(ys)].filter((value) => value > 0);
+  const pitchMil = steps.length ? Math.min(...steps) : mmToEasyEdaProFootprint(2.54);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const cols = Math.max(1, Math.round((maxX - minX) / pitchMil) + 1);
+  const rows = Math.max(1, Math.round((maxY - minY) / pitchMil) + 1);
+  if (rows > 40 || cols > 40) throw new Error(`${name} 恢复后的网格超过 40 x 40`);
+  const project = createState(rows, cols);
+  project.partName = normalizeName(name);
+  project.pitchMm = round(milToMm(pitchMil), 5);
+  project.padMm = round(milToMm(padRecords[0].payload?.defaultPad?.width), 5) || 1.8;
+  project.drillMm = round(milToMm(padRecords[0].payload?.hole?.width), 5) || 1;
+  project.symbolRows = recoverLegacySymbolRows(symbolRecords);
+  const pinNames = recoverLegacyPinNames(symbolRecords);
+  const recoveredPads = [];
+  padRecords.forEach((record) => {
+    const number = String(record.payload?.num || "");
+    const col = clampInt(Math.round((Number(record.payload.centerX) - minX) / pitchMil), 0, cols - 1);
+    const row = clampInt(Math.round((maxY - Number(record.payload.centerY)) / pitchMil), 0, rows - 1);
+    const cell = project.cells.find((item) => item.row === row && item.col === col);
+    if (!cell) return;
+    cell.enabled = true;
+    cell.pinNumber = number;
+    cell.pinName = pinNames.get(number) || `PIN_${number}`;
+    recoveredPads.push({ record, cell });
+  });
+
+  const polyRecords = footprintRecords.filter((record) => record.header?.type === "POLY");
+  const outlineBounds = getClosedRectangleBounds(polyRecords.slice(0, 4));
+  project.includeOutline = Boolean(outlineBounds);
+  project.silkWidthMm = polyRecords.length
+    ? Math.max(0.05, round(milToMm(polyRecords[0].payload?.width), 5))
+    : 0.15;
+  let firstUserPoly = 0;
+  if (outlineBounds) {
+    firstUserPoly = 4;
+    const margins = {
+      top: Math.max(0, milToMm(outlineBounds.maxY - maxY)),
+      bottom: Math.max(0, milToMm(minY - outlineBounds.minY)),
+      left: Math.max(0, milToMm(minX - outlineBounds.minX)),
+      right: Math.max(0, milToMm(outlineBounds.maxX - maxX))
+    };
+    project.outlineMargins = createOutlineMargins(margins, 1.27);
+    project.outlineMarginMm = round((margins.top + margins.bottom + margins.left + margins.right) / 4, 5);
+    project.outlineCustomMargins = Math.max(...Object.values(margins)) - Math.min(...Object.values(margins)) > 0.01;
+  }
+
+  const centerX = ((cols - 1) * project.pitchMm) / 2;
+  const centerY = ((rows - 1) * project.pitchMm) / 2;
+  const toGridPoint = (x, y) => ({
+    x: round(milToMm(x) + centerX, 5),
+    y: round(centerY - milToMm(y), 5)
+  });
+  for (let index = firstUserPoly; index < polyRecords.length;) {
+    const rectangle = getClosedRectangleBounds(polyRecords.slice(index, index + 4));
+    if (rectangle) {
+      const start = toGridPoint(rectangle.minX, rectangle.maxY);
+      const end = toGridPoint(rectangle.maxX, rectangle.minY);
+      project.silkscreen.push({ type: "rect", x1Mm: start.x, y1Mm: start.y, x2Mm: end.x, y2Mm: end.y });
+      index += 4;
+      continue;
+    }
+    const segment = getPolySegment(polyRecords[index]);
+    if (segment) {
+      const start = toGridPoint(segment.x1, segment.y1);
+      const end = toGridPoint(segment.x2, segment.y2);
+      project.silkscreen.push({ type: "line", x1Mm: start.x, y1Mm: start.y, x2Mm: end.x, y2Mm: end.y });
+    }
+    index += 1;
+  }
+
+  const stringRecords = footprintRecords.filter((record) => record.header?.type === "STRING");
+  const consumedStrings = new Set();
+  const nameString = stringRecords.find((record) => String(record.payload?.text || "") === name);
+  if (nameString) {
+    consumedStrings.add(nameString);
+    project.nameSilkFontSizeMm = Math.max(0.4, round(milToMm(nameString.payload?.fontSize), 5));
+  }
+  recoveredPads.forEach(({ record: padRecord, cell }) => {
+    const candidates = stringRecords.filter((record) => !consumedStrings.has(record) && String(record.payload?.text || "") === cell.pinName);
+    if (!candidates.length) return;
+    const stringRecord = candidates.sort((a, b) => {
+      const distanceA = Math.hypot(Number(a.payload.x) - Number(padRecord.payload.centerX), Number(a.payload.y) - Number(padRecord.payload.centerY));
+      const distanceB = Math.hypot(Number(b.payload.x) - Number(padRecord.payload.centerX), Number(b.payload.y) - Number(padRecord.payload.centerY));
+      return distanceA - distanceB;
+    })[0];
+    consumedStrings.add(stringRecord);
+    const dx = milToMm(Number(stringRecord.payload.x) - Number(padRecord.payload.centerX));
+    const dy = -milToMm(Number(stringRecord.payload.y) - Number(padRecord.payload.centerY));
+    cell.pinNameSilkPosition = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "top" : "bottom");
+    cell.pinNameSilkFontSizeMm = Math.max(0.4, round(milToMm(stringRecord.payload?.fontSize), 5));
+  });
+  stringRecords.filter((record) => !consumedStrings.has(record)).forEach((record) => {
+    const point = toGridPoint(Number(record.payload?.x), Number(record.payload?.y));
+    project.silkscreen.push({ type: "text", xMm: point.x, yMm: point.y, value: String(record.payload?.text || "") });
+  });
+  project.includePinNameSilk = project.cells.some((cell) => cell.pinNameSilkPosition !== "");
+  return normalizeProjectState(project);
+}
+
+function recoverLegacyElibz2(entries, records, elibuName) {
+  const index = parseJsonZipEntry(entries, "device2.json", false);
+  if (!index || !index.devices || !Object.keys(index.devices).length) {
+    throw new Error("旧格式只支持本页面生成的完整器件库 device2.json");
+  }
+  const documentGroups = groupEasyEdaProRecordsByDocument(records);
+  const recoveredDevices = [];
+  let creatorId = "";
+  Object.entries(index.devices).forEach(([deviceId, indexedDevice]) => {
+    const name = String(indexedDevice.display_title || indexedDevice.attributes?.Value || indexedDevice.title || "DUPONT_GRID");
+    const symbolId = String(indexedDevice.attributes?.Symbol || "").toLowerCase();
+    const footprintId = String(indexedDevice.attributes?.Footprint || "").toLowerCase();
+    const symbolRecords = documentGroups.get(symbolId);
+    const footprintRecords = documentGroups.get(footprintId);
+    if (!symbolRecords || !footprintRecords) throw new Error(`${name} 的符号或封装记录不完整`);
+    assertLegacyGeneratorFingerprint(symbolRecords, footprintRecords, name);
+    const project = recoverLegacyProject(name, symbolRecords, footprintRecords);
+    const symbolHead = getDocumentHead(symbolRecords);
+    const footprintHead = getDocumentHead(footprintRecords);
+    creatorId ||= indexedDevice.creator?.uuid || symbolHead.user?.uuid || footprintHead.user?.uuid || "";
+    recoveredDevices.push(createWorkspaceDevice(project, {
+      source: "legacy",
+      professional: {
+        deviceId,
+        symbolId,
+        footprintId,
+        symbolClient: symbolHead.client,
+        footprintClient: footprintHead.client,
+        createTime: indexedDevice.createTime
+      }
+    }));
+  });
+  const libraryName = normalizeLibraryName(elibuName.split("/").pop().replace(/\.elibu$/i, ""), recoveredDevices[0].project.partName);
+  const now = Date.now();
+  const imported = normalizeWorkspacePayload({
+    format: WORKSPACE_FORMAT,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    library: {
+      name: libraryName,
+      creatorId,
+      createdAt: Math.min(...recoveredDevices.map((device) => device.professional.createTime)),
+      updatedAt: now
+    },
+    activeDeviceId: recoveredDevices[0].editorId,
+    devices: recoveredDevices,
+    ui: { layoutColumns: createLayoutColumns() }
+  });
+  imported.devices.forEach((device) => {
+    device.source = "legacy";
+  });
+  return {
+    workspace: imported,
+    warning: `已按旧格式恢复 ${imported.devices.length} 个器件；无法从 elibu 无损反推的编辑参数已采用兼容值。再次导出后会升级为新格式。`
+  };
+}
+
+function createProjectPayload() {
+  commitActiveDevice();
+  const payload = cloneData(workspace);
+  payload.format = WORKSPACE_FORMAT;
+  payload.schemaVersion = WORKSPACE_SCHEMA_VERSION;
+  payload.activeDeviceId = workspace.activeDeviceId;
+  payload.ui = {
+    layoutColumns: createLayoutColumns(workspace.ui.layoutColumns)
+  };
+  payload.devices = workspace.devices.map((device) => ({
+    ...cloneData(device),
+    project: serializeProjectState(device.editorId === workspace.activeDeviceId ? state : device.project)
+  }));
+  return payload;
 }
 
 function saveProject() {
   const payload = createProjectPayload();
-  downloadText(`${state.partName}.dupont-grid-project.json`, JSON.stringify(payload, null, 2), "application/json");
+  downloadText(`${normalizeLibraryName(workspace.library.name)}.dupont-grid-project.json`, JSON.stringify(payload, null, 2), "application/json");
+}
+
+function serializeProjectState(project) {
+  const payload = {
+    version: 5,
+    ...cloneData(project),
+    drawStart: null,
+    mode: "select",
+    selectedKey: null
+  };
+  delete payload.layoutColumns;
+  return payload;
 }
 
 function inferImportedPinNameSilkPosition(payload) {
@@ -3329,14 +4100,14 @@ function migrateLegacyCellPinNameSilkPosition(cells, fallbackPosition) {
   return cells;
 }
 
-function applyProjectPayload(payload) {
+function normalizeProjectState(payload) {
   if (!payload || !Array.isArray(payload.cells)) throw new Error("项目文件缺少 cells");
   const importedPinNameSilkPosition = inferImportedPinNameSilkPosition(payload);
   const importedCells = migrateLegacyCellPinNameSilkPosition(
     Array.isArray(payload.cells) ? payload.cells.map((cell) => ({ ...cell })) : [],
     importedPinNameSilkPosition
   );
-  state = {
+  const nextState = {
     ...createState(clampInt(payload.rows, 1, 40), clampInt(payload.cols, 1, 40)),
     ...payload,
     rows: clampInt(payload.rows, 1, 40),
@@ -3347,26 +4118,91 @@ function applyProjectPayload(payload) {
     silkscreen: Array.isArray(payload.silkscreen) ? payload.silkscreen : [],
     cells: importedCells
   };
-  state.outlineMarginMm = nonNegativeNumber(state.outlineMarginMm, 1.27);
-  state.outlineCustomMargins = Boolean(state.outlineCustomMargins);
-  state.outlineMargins = state.outlineCustomMargins
-    ? createOutlineMargins(state.outlineMargins, state.outlineMarginMm)
-    : createOutlineMargins({}, state.outlineMarginMm);
-  state.nameSilkFontSizeMm = positiveNumber(state.nameSilkFontSizeMm, 1);
-  state.pinNameSilkPosition = importedPinNameSilkPosition;
-  state.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(state.pinNameSilkFontSizeMm || 0.8);
-  state.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetXMm);
-  state.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(state.pinNameSilkOffsetYMm);
-  state.includePinNameSilk = state.pinNameSilkPosition !== "none";
-  state.symbolRows = normalizeSymbolRows(state.symbolRows || 2);
-  state.symbolPinsPerRow = clampIntOrZero(state.symbolPinsPerRow, 1, 200);
-  state.symbolMirror = Boolean(state.symbolMirror);
-  state.symbolFlip = Boolean(state.symbolFlip);
-  state.symbolSidePins = createSymbolSidePins(state.symbolSidePins);
-  state.layoutColumns = createLayoutColumns(state.layoutColumns);
-  state.cells = normalizeGridCells(state.cells, state.rows, state.cols);
+  nextState.outlineMarginMm = nonNegativeNumber(nextState.outlineMarginMm, 1.27);
+  nextState.outlineCustomMargins = Boolean(nextState.outlineCustomMargins);
+  nextState.outlineMargins = nextState.outlineCustomMargins
+    ? createOutlineMargins(nextState.outlineMargins, nextState.outlineMarginMm)
+    : createOutlineMargins({}, nextState.outlineMarginMm);
+  nextState.nameSilkFontSizeMm = positiveNumber(nextState.nameSilkFontSizeMm, 1);
+  nextState.pinNameSilkPosition = importedPinNameSilkPosition;
+  nextState.pinNameSilkFontSizeMm = normalizePinNameSilkFontSize(nextState.pinNameSilkFontSizeMm || 0.8);
+  nextState.pinNameSilkOffsetXMm = normalizePinNameSilkOffset(nextState.pinNameSilkOffsetXMm);
+  nextState.pinNameSilkOffsetYMm = normalizePinNameSilkOffset(nextState.pinNameSilkOffsetYMm);
+  nextState.includePinNameSilk = nextState.pinNameSilkPosition !== "none";
+  nextState.symbolRows = normalizeSymbolRows(nextState.symbolRows || 2);
+  nextState.symbolPinsPerRow = clampIntOrZero(nextState.symbolPinsPerRow, 1, 200);
+  nextState.symbolMirror = Boolean(nextState.symbolMirror);
+  nextState.symbolFlip = Boolean(nextState.symbolFlip);
+  nextState.symbolSidePins = createSymbolSidePins(nextState.symbolSidePins);
+  nextState.layoutColumns = createLayoutColumns(nextState.layoutColumns);
+  nextState.cells = normalizeGridCells(nextState.cells, nextState.rows, nextState.cols);
+  return nextState;
+}
+
+function normalizeWorkspacePayload(payload) {
+  const source = payload?.format === ELIBZ2_MANIFEST_FORMAT && payload.workspace ? payload.workspace : payload;
+  if (!source || !Array.isArray(source.devices)) {
+    return createWorkspace(normalizeProjectState(source), {
+      library: {
+        name: source?.partName || "DUPONT_GRID"
+      },
+      ui: {
+        layoutColumns: source?.layoutColumns
+      }
+    });
+  }
+  if (!source.devices.length) throw new Error("工作区至少需要一个器件");
+  if (Number(source.schemaVersion || 0) > WORKSPACE_SCHEMA_VERSION) {
+    throw new Error(`工作区版本 ${source.schemaVersion} 高于当前支持的版本`);
+  }
+  const devices = source.devices.map((device, index) => createWorkspaceDevice(device.project, {
+    editorId: device.editorId,
+    source: device.source,
+    professional: device.professional,
+    index
+  }));
+  const editorIds = new Set();
+  devices.forEach((device) => {
+    if (editorIds.has(device.editorId)) {
+      device.editorId = createEasyEdaProId(`${device.project.partName}:editor:${editorIds.size}`);
+    }
+    editorIds.add(device.editorId);
+  });
+  const now = Date.now();
+  const librarySource = source.library || {};
+  const nextWorkspace = {
+    format: WORKSPACE_FORMAT,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    library: {
+      id: normalizeEasyEdaProId(librarySource.id, "workspace:library"),
+      name: normalizeLibraryName(librarySource.name, devices[0].project.partName),
+      creatorId: normalizeEasyEdaProId(librarySource.creatorId, "workspace:creator"),
+      createdAt: Number.isFinite(Number(librarySource.createdAt)) ? Number(librarySource.createdAt) : now,
+      updatedAt: Number.isFinite(Number(librarySource.updatedAt)) ? Number(librarySource.updatedAt) : now
+    },
+    activeDeviceId: devices.some((device) => device.editorId === source.activeDeviceId)
+      ? source.activeDeviceId
+      : devices[0].editorId,
+    devices,
+    ui: {
+      layoutColumns: createLayoutColumns(source.ui?.layoutColumns || source.layoutColumns)
+    }
+  };
+  assertWorkspaceIdentityUniqueness(nextWorkspace);
+  return nextWorkspace;
+}
+
+function applyWorkspacePayload(payload) {
+  const nextWorkspace = normalizeWorkspacePayload(payload);
+  workspace = nextWorkspace;
+  const active = getActiveWorkspaceDevice();
+  state = active.project;
   syncInputsFromState();
   render();
+}
+
+function applyProjectPayload(payload) {
+  applyWorkspacePayload(payload);
 }
 
 function loadProject(file) {
@@ -3375,7 +4211,7 @@ function loadProject(file) {
   reader.onload = () => {
     try {
       const payload = JSON.parse(String(reader.result));
-      applyProjectPayload(payload);
+      applyWorkspacePayload(payload);
     } catch (error) {
       alert(`项目文件无法导入：${error.message}`);
     }
@@ -3384,6 +4220,7 @@ function loadProject(file) {
 }
 
 function scheduleProjectCacheSave() {
+  if (RUNNING_BROWSER_TESTS) return;
   if (cacheSaveTimer) clearTimeout(cacheSaveTimer);
   cacheSaveTimer = setTimeout(() => {
     cacheSaveTimer = null;
@@ -3399,10 +4236,17 @@ function saveProjectCache() {
 }
 
 function restoreProjectCache() {
-  const payload = readCookieProjectCache() || readLocalProjectCache();
+  let payload = readCookieProjectCache() || readLocalProjectCache();
+  let migratedLegacyCache = false;
+  if (!payload) {
+    payload = readCookieProjectCache(LEGACY_CACHE_COOKIE_META, LEGACY_CACHE_COOKIE_CHUNK_PREFIX)
+      || readLocalProjectCache(LEGACY_CACHE_LOCAL_STORAGE_KEY);
+    migratedLegacyCache = Boolean(payload);
+  }
   if (!payload) return false;
   try {
-    applyProjectPayload(payload);
+    applyWorkspacePayload(payload);
+    if (migratedLegacyCache) saveProjectCache();
     return true;
   } catch (error) {
     console.warn("Project cache could not be restored.", error);
@@ -3418,9 +4262,9 @@ function writeLocalProjectCache(json) {
   }
 }
 
-function readLocalProjectCache() {
+function readLocalProjectCache(key = CACHE_LOCAL_STORAGE_KEY) {
   try {
-    const json = localStorage.getItem(CACHE_LOCAL_STORAGE_KEY);
+    const json = localStorage.getItem(key);
     return json ? JSON.parse(json) : null;
   } catch (error) {
     console.warn("Local project cache could not be read.", error);
@@ -3440,7 +4284,7 @@ function writeCookieProjectCache(json) {
       setCookie(`${CACHE_COOKIE_CHUNK_PREFIX}${index}`, chunk, CACHE_COOKIE_DAYS);
     });
     setCookie(CACHE_COOKIE_META, encodeURIComponent(JSON.stringify({
-      version: 2,
+      version: 3,
       chunks: chunks.length,
       updatedAt: Date.now()
     })), CACHE_COOKIE_DAYS);
@@ -3449,15 +4293,15 @@ function writeCookieProjectCache(json) {
   }
 }
 
-function readCookieProjectCache() {
+function readCookieProjectCache(metaName = CACHE_COOKIE_META, chunkPrefix = CACHE_COOKIE_CHUNK_PREFIX) {
   try {
-    const metaText = getCookie(CACHE_COOKIE_META);
+    const metaText = getCookie(metaName);
     if (!metaText) return null;
     const meta = JSON.parse(decodeURIComponent(metaText));
     const chunkCount = clampInt(meta.chunks, 1, 256);
     let encoded = "";
     for (let index = 0; index < chunkCount; index += 1) {
-      const chunk = getCookie(`${CACHE_COOKIE_CHUNK_PREFIX}${index}`);
+      const chunk = getCookie(`${chunkPrefix}${index}`);
       if (!chunk) return null;
       encoded += chunk;
     }
@@ -3534,7 +4378,7 @@ function beginColumnResize(event) {
       next.center = clampNumber(start.center + dx, MIN_LAYOUT_COLUMNS.center, total - MIN_LAYOUT_COLUMNS.right);
       next.right = total - next.center;
     }
-    state.layoutColumns = createLayoutColumns(next);
+    workspace.ui.layoutColumns = createLayoutColumns(next);
     applyLayoutColumns();
   };
 
@@ -3553,6 +4397,41 @@ function beginColumnResize(event) {
 
 dom.columnResizers.forEach((resizer) => {
   resizer.addEventListener("pointerdown", beginColumnResize);
+});
+
+dom.libraryName.addEventListener("input", () => {
+  workspace.library.name = dom.libraryName.value;
+  workspace.library.updatedAt = Date.now();
+  scheduleProjectCacheSave();
+});
+
+dom.libraryName.addEventListener("change", () => {
+  workspace.library.name = normalizeLibraryName(dom.libraryName.value, "DUPONT_GRID");
+  dom.libraryName.value = workspace.library.name;
+  scheduleProjectCacheSave();
+});
+
+dom.deviceList.addEventListener("click", (event) => {
+  const button = event.target.closest(".device-list-item");
+  if (button) activateWorkspaceDevice(button.dataset.deviceId);
+});
+
+dom.addDevice.addEventListener("click", addWorkspaceDevice);
+dom.duplicateDevice.addEventListener("click", duplicateActiveWorkspaceDevice);
+dom.deleteDevice.addEventListener("click", deleteActiveWorkspaceDevice);
+dom.moveDeviceUp.addEventListener("click", () => moveActiveWorkspaceDevice(-1));
+dom.moveDeviceDown.addEventListener("click", () => moveActiveWorkspaceDevice(1));
+dom.libraryFile.addEventListener("change", (event) => loadElibz2(event.target.files[0]));
+
+dom.partName.addEventListener("change", () => {
+  readSettings();
+  const active = getActiveWorkspaceDevice();
+  const uniqueName = getUniqueDeviceName(state.partName, active?.editorId);
+  if (uniqueName !== state.partName) {
+    state.partName = uniqueName;
+    dom.partName.value = uniqueName;
+    showLibraryImportStatus(`器件名称已调整为 ${uniqueName}，库内名称不能重复。`, "warning");
+  }
 });
 
 dom.gridAdjustButtons.forEach((button) => {
@@ -3698,7 +4577,7 @@ dom.downloadEasyEdaProCombined.addEventListener("click", () => exportFile("lceda
 dom.downloadEasyEdaProSymbol.addEventListener("click", () => exportFile("lceda-pro-symbol"));
 dom.downloadEasyEdaProFootprint.addEventListener("click", () => exportFile("lceda-pro-footprint"));
 
-if (!restoreProjectCache()) {
+if (RUNNING_BROWSER_TESTS || !restoreProjectCache()) {
   syncInputsFromState();
   render();
 }
