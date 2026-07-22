@@ -2419,6 +2419,7 @@ function generateEasyEdaProSymbolRecords(model, context) {
     });
   });
 
+  const bodyTop = mmToEasyEdaProSymbol(-layout.bodyHalfH);
   const bodyBottom = mmToEasyEdaProSymbol(layout.bodyHalfH);
   const addPartAttr = (key, value, options) => {
     add("ATTR", `ie${elementId++}`, createEasyEdaProSymbolAttr(partId, partId, key, value, zIndex++, options));
@@ -2436,8 +2437,10 @@ function generateEasyEdaProSymbolRecords(model, context) {
     fontSize: 3.93701,
     align: "CENTER_MIDDLE"
   });
-  addPartAttr("Value", "", {
-    visible: false,
+  addPartAttr("Value", model.name, {
+    visible: true,
+    x: 0,
+    y: round(bodyTop - 5, 5),
     fontSize: 3.93701,
     align: "CENTER_MIDDLE"
   });
@@ -2776,9 +2779,9 @@ function generateEasyEdaProLibraryIndex(model, context, includeSymbol, includeFo
       Description: "",
       "Add into BOM": "yes",
       "Convert to PCB": "yes",
-      Name: model.name,
+      Name: "",
       Designator: "J?",
-      Value: "",
+      Value: model.name,
       UserDocLink: ""
     },
     images: [""],
